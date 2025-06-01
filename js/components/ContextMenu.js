@@ -210,7 +210,14 @@ class ContextMenu {
         }
     }
 
+    // deleteTileメソッドを修正：
+
     deleteTile(tile) {
+        // 削除前の状態を保存
+        if (window.saveUndoState) {
+            window.saveUndoState();
+        }
+
         if (tile.groupId) {
             const groupArea = this.canvas.groups.get(tile.groupId);
             if (groupArea) {
@@ -226,6 +233,7 @@ class ContextMenu {
         this.canvas.tiles.delete(tile.id);
         this.canvas.saveData();
     }
+
 
     deleteGroup(groupArea) {
         groupArea.tiles.forEach(tile => {

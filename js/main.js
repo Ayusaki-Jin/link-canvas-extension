@@ -7,6 +7,10 @@ let autoGrouping = null;
 let colorManager = null;
 let nameGenerator = null;
 
+// Undo機能のグローバル変数
+let undoStack = [];
+const MAX_UNDO_LOCAL = 10;
+const MAX_UNDO_SYNC = 3; // Syncには最新3つのみ
 // アプリケーション初期化
 document.addEventListener('DOMContentLoaded', async () => {
     console.log('[INIT] Link Canvas application starting');
@@ -60,11 +64,15 @@ function initializeUI() {
     const settingsPanel = document.getElementById('settings-panel');
     const importButton = document.getElementById('import-bookmarks');
     const clearButton = document.getElementById('clear-all-data');
+    const trashButton = document.getElementById('show-trash-area');
+    const exportButton = document.getElementById('export-bookmarks');
 
-    // 設定パネル開閉
-    settingsToggle.addEventListener('click', () => {
-        settingsPanel.classList.toggle('hidden');
-    });
+    // 【修正】設定パネル開閉
+    if (settingsToggle) {
+        settingsToggle.addEventListener('click', () => {
+            settingsPanel.classList.toggle('hidden');
+        });
+    }
 
     // パネル外クリックで閉じる
     document.addEventListener('click', (e) => {
@@ -74,28 +82,127 @@ function initializeUI() {
     });
 
     // ブックマークインポート
-    importButton.addEventListener('click', handleBookmarkImport);
+    if (importButton) {
+        importButton.addEventListener('click', handleBookmarkImport);
+    }
+
+    // 【修正】消しゴムモード（直接起動）
+    if (trashButton) {
+        trashButton.textContent = '🧽 消しゴムモード';
+        trashButton.addEventListener('click', () => {
+            document.querySelector('#settings-panel').classList.add('hidden');
+            createEraserMode();
+        });
+    }
+
+    // エクスポート機能
+    if (exportButton) {
+        exportButton.addEventListener('click', handleExportBookmarks);
+    }
 
     // 全データクリア
-    clearButton.addEventListener('click', handleClearAllData);
+    if (clearButton) {
+        clearButton.addEventListener('click', handleClearAllData);
+    }
 
     console.log('[INFO] UI initialized');
 }
 
+// データ変更時にundo履歴を記録
+// Undo状態保存（Chrome Sync対応）
+async function saveUndoState() {
+    if (!linkCanvas) return;
+
+    const state = {
+        tiles: linkCanvas.storageManager.serializeTiles(linkCanvas.tiles),
+        groups: linkCanvas.storageManager.serializeGroups(linkCanvas.groups),
+        timestamp: Date.now(),
+        id: 'undo_' + Date.now()
+    };
+
+    // ローカルスタックに追加
+    undoStack.push(state);
+    if (undoStack.length > MAX_UNDO_LOCAL) {
+        undoStack.shift();
+    }
+
+    // Chrome Syncにも保存（最新のものだけ）
+    try {
+        const syncStates = undoStack.slice(-MAX_UNDO_SYNC);
+        await chrome.storage.sync.set({
+            'linkCanvas_undo': syncStates
+        });
+        console.log('[DEBUG] Undo state saved to sync, total:', undoStack.length);
+    } catch (error) {
+        console.log('[WARNING] Failed to save undo to sync:', error);
+    }
+}
+
+// Undo履歴読み込み
+async function loadUndoHistory() {
+    try {
+        const result = await chrome.storage.sync.get(['linkCanvas_undo']);
+        if (result.linkCanvas_undo && Array.isArray(result.linkCanvas_undo)) {
+            undoStack = result.linkCanvas_undo;
+            console.log('[INFO] Undo history loaded:', undoStack.length, 'states');
+        }
+    } catch (error) {
+        console.log('[WARNING] Failed to load undo history:', error);
+    }
+}
+
+// 強化版Undo機能
+function handleUndo() {
+    if (undoStack.length === 0) {
+        showErrorMessage('元に戻す操作がありません');
+        return;
+    }
+
+    const lastState = undoStack.pop();
+
+    try {
+        // 現在の状態をクリア
+        linkCanvas.clearAll();
+
+        // 前の状態を復元
+        linkCanvas.loadFromData({
+            tiles: lastState.tiles,
+            groups: lastState.groups
+        });
+
+        // Chrome Syncも更新
+        chrome.storage.sync.set({
+            'linkCanvas_undo': undoStack.slice(-MAX_UNDO_SYNC)
+        }).catch(err => console.log('[WARNING] Sync update failed:', err));
+
+        showSuccessMessage(`操作を元に戻しました（残り${undoStack.length}回）`);
+        console.log('[INFO] Undo executed, remaining:', undoStack.length);
+
+    } catch (error) {
+        console.log('[ERROR] Undo failed:', error);
+        showErrorMessage('元に戻す操作に失敗しました');
+    }
+}
+
 // データ読み込み
+// loadSavedData関数を修正：
+
 async function loadSavedData() {
+    // Undo履歴を先に読み込み
+    await loadUndoHistory();
+
     const data = await storageManager.loadData();
 
     if (data) {
         await linkCanvas.loadFromData(data);
 
-        // ユーティリティクラスの状態復元
-        const usedColors = data.groups.map(g => g.color);
-        const usedNames = data.groups.map(g => g.name);
+        // 初回データ読み込み後にundo履歴を保存
+        saveUndoState();
 
         console.log('[INFO] Saved data loaded successfully');
     }
 }
+
 
 // イベントリスナー設定
 function setupEventListeners() {
@@ -105,7 +212,91 @@ function setupEventListeners() {
     // ウィンドウリサイズ
     window.addEventListener('resize', handleWindowResize);
 
+    // 空白エリア右クリック
+    document.getElementById('link-canvas').addEventListener('contextmenu', (e) => {
+        if (e.target.id === 'link-canvas') {
+            e.preventDefault();
+            showCanvasContextMenu(e);
+        }
+    });
+
     console.log('[INFO] Event listeners set up');
+}
+
+// キャンバス右クリックメニュー
+function showCanvasContextMenu(e) {
+    const menu = document.createElement('div');
+    menu.className = 'canvas-context-menu';
+    menu.innerHTML = `
+        <div class="context-item" id="undo-action">↶ 元に戻す (${undoStack.length})</div>
+        <div class="context-item" id="clear-canvas">🗑️ 全削除</div>
+    `;
+
+    menu.style.cssText = `
+        position: fixed;
+        left: ${e.clientX}px;
+        top: ${e.clientY}px;
+        background: white;
+        border: 1px solid #ddd;
+        border-radius: 6px;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+        z-index: 10000;
+        min-width: 120px;
+    `;
+
+    // イベント
+    menu.querySelector('#undo-action').addEventListener('click', () => {
+        handleUndo();
+        document.body.removeChild(menu);
+    });
+
+    menu.querySelector('#clear-canvas').addEventListener('click', () => {
+        if (confirm('すべてのタイルとグループを削除しますか？')) {
+            saveUndoState(); // 削除前の状態を保存
+            linkCanvas.clearAll();
+            linkCanvas.saveData();
+            showSuccessMessage('すべて削除しました');
+        }
+        document.body.removeChild(menu);
+    });
+
+    // メニュー外クリックで閉じる
+    setTimeout(() => {
+        const closeMenu = () => {
+            if (document.body.contains(menu)) {
+                document.body.removeChild(menu);
+            }
+            document.removeEventListener('click', closeMenu);
+        };
+        document.addEventListener('click', closeMenu);
+    }, 100);
+
+    document.body.appendChild(menu);
+}
+
+// Undo機能
+function handleUndo() {
+    if (undoStack.length === 0) {
+        showErrorMessage('元に戻す操作がありません');
+        return;
+    }
+
+    const lastState = undoStack.pop();
+
+    try {
+        linkCanvas.clearAll();
+        linkCanvas.loadFromData({
+            tiles: lastState.tiles,
+            groups: lastState.groups
+        });
+
+        showSuccessMessage('操作を元に戻しました');
+        console.log('[INFO] Undo executed, remaining stack:', undoStack.length);
+
+    } catch (error) {
+        console.log('[ERROR] Undo failed:', error);
+        showErrorMessage('元に戻す操作に失敗しました');
+    }
 }
 
 // キーボードショートカット
@@ -113,15 +304,19 @@ function handleKeyboardShortcuts(e) {
     const modifier = e.ctrlKey || e.metaKey;
 
     switch (e.key) {
-        case 'Delete':
-            // 選択されたタイルを削除（実装は後で追加可能）
-            break;
-
         case 's':
             if (modifier) {
                 e.preventDefault();
+                saveUndoState();
                 linkCanvas.saveData();
                 showSuccessMessage('データを保存しました');
+            }
+            break;
+
+        case 'z':
+            if (modifier) {
+                e.preventDefault();
+                handleUndo();
             }
             break;
 
@@ -140,21 +335,250 @@ function handleWindowResize() {
     canvas.style.height = window.innerHeight + 'px';
 }
 
-// ブックマークインポート
-// handleBookmarkImport関数を以下に置換：
+// エクスポート機能
 
+async function handleExportBookmarks() {
+    try {
+        if (linkCanvas.tiles.size === 0) {
+            showErrorMessage('エクスポートするタイルがありません');
+            return;
+        }
+
+        // 確認ダイアログ表示
+        const folderName = `Link Canvas Export ${new Date().toLocaleDateString()}`;
+        const confirmMessage = `${linkCanvas.tiles.size}個のタイルを\nブックマークフォルダ「${folderName}」にエクスポートします。\n\n作成しますか？`;
+
+        if (!confirm(confirmMessage)) {
+            return;
+        }
+
+        // エクスポート処理中は重複実行を防止
+        const exportButton = document.getElementById('export-bookmarks');
+        if (exportButton) {
+            exportButton.disabled = true;
+            exportButton.textContent = 'エクスポート中...';
+        }
+
+        try {
+            // フォルダ作成
+            const folder = await chrome.bookmarks.create({
+                title: folderName
+            });
+
+            let exportCount = 0;
+            const errors = [];
+
+            // タイルを順次エクスポート
+            for (const [id, tile] of linkCanvas.tiles) {
+                try {
+                    await chrome.bookmarks.create({
+                        parentId: folder.id,
+                        title: tile.title,
+                        url: tile.url
+                    });
+                    exportCount++;
+                } catch (error) {
+                    errors.push(`${tile.title}: ${error.message}`);
+                    console.log('[ERROR] Failed to export tile:', tile.title, error);
+                }
+            }
+
+            // 結果表示
+            if (errors.length === 0) {
+                showSuccessMessage(`✅ ${exportCount}個のタイルをエクスポートしました`);
+            } else {
+                showSuccessMessage(`⚠️ ${exportCount}個エクスポート完了（${errors.length}個失敗）`);
+                console.log('[WARNING] Export errors:', errors);
+            }
+
+        } finally {
+            // ボタンを元に戻す
+            if (exportButton) {
+                exportButton.disabled = false;
+                exportButton.textContent = '📤 ブックマークにエクスポート';
+            }
+        }
+
+    } catch (error) {
+        console.log('[ERROR] Failed to export bookmarks:', error);
+        showErrorMessage('エクスポートに失敗しました');
+
+        // ボタンを元に戻す
+        const exportButton = document.getElementById('export-bookmarks');
+        if (exportButton) {
+            exportButton.disabled = false;
+            exportButton.textContent = '📤 ブックマークにエクスポート';
+        }
+    }
+}
+
+
+// 消しゴムモード
+function createEraserMode() {
+    let eraserActive = false;
+    let eraserElement = null;
+    let deletedTiles = [];
+
+    saveUndoState(); // 消しゴム開始前の状態を保存
+
+    function createEraser(x, y) {
+        eraserElement = document.createElement('div');
+        eraserElement.id = 'eraser-cursor';
+        eraserElement.innerHTML = '🧽';
+        eraserElement.style.cssText = `
+            position: fixed;
+            left: ${x - 25}px;
+            top: ${y - 25}px;
+            width: 50px;
+            height: 50px;
+            background: rgba(255, 107, 107, 0.8);
+            border: 3px solid #fff;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 20px;
+            z-index: 10000;
+            pointer-events: none;
+            box-shadow: 0 4px 12px rgba(220, 53, 69, 0.4);
+        `;
+        document.body.appendChild(eraserElement);
+    }
+
+    function handleMouseDown(e) {
+        if (e.button === 0) {
+            eraserActive = true;
+            createEraser(e.clientX, e.clientY);
+            checkTileCollision(e.clientX, e.clientY);
+        }
+    }
+
+    function handleMouseMove(e) {
+        if (eraserActive && eraserElement) {
+            eraserElement.style.left = (e.clientX - 25) + 'px';
+            eraserElement.style.top = (e.clientY - 25) + 'px';
+            checkTileCollision(e.clientX, e.clientY);
+        }
+    }
+
+    function handleMouseUp(e) {
+        if (eraserActive) {
+            eraserActive = false;
+            if (eraserElement) {
+                document.body.removeChild(eraserElement);
+                eraserElement = null;
+            }
+
+            if (deletedTiles.length > 0) {
+                window.linkCanvas.saveData();
+                console.log('[INFO] Eraser session complete, data saved');
+                deletedTiles = [];
+            }
+        }
+    }
+
+    function checkTileCollision(mouseX, mouseY) {
+        const elements = document.elementsFromPoint(mouseX, mouseY);
+
+        for (const element of elements) {
+            if (element.classList.contains('link-tile')) {
+                const tileId = Array.from(window.linkCanvas.tiles.entries())
+                    .find(([id, tile]) => tile.element === element)?.[0];
+
+                if (tileId && !deletedTiles.includes(tileId)) {
+                    const tile = window.linkCanvas.tiles.get(tileId);
+
+                    if (tile.groupId) {
+                        const group = window.linkCanvas.groups.get(tile.groupId);
+                        if (group) {
+                            group.removeTile(tile);
+                            if (group.tiles.length === 0) {
+                                group.element.remove();
+                                window.linkCanvas.groups.delete(group.id);
+                            }
+                        }
+                    }
+
+                    element.remove();
+                    window.linkCanvas.tiles.delete(tileId);
+                    deletedTiles.push(tileId);
+
+                    console.log('[INFO] Tile erased:', tileId);
+                }
+                break;
+            }
+        }
+    }
+
+    function exitEraserMode() {
+        document.removeEventListener('mousedown', handleMouseDown);
+        document.removeEventListener('mousemove', handleMouseMove);
+        document.removeEventListener('mouseup', handleMouseUp);
+
+        if (eraserElement) {
+            document.body.removeChild(eraserElement);
+        }
+
+        if (deletedTiles.length > 0) {
+            window.linkCanvas.saveData();
+        }
+
+        const exitButton = document.getElementById('exit-eraser');
+        if (exitButton) {
+            document.body.removeChild(exitButton);
+        }
+
+        showSuccessMessage('消しゴムモード終了');
+    }
+
+    document.addEventListener('mousedown', handleMouseDown);
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', handleMouseUp);
+
+    const exitButton = document.createElement('button');
+    exitButton.id = 'exit-eraser';
+    exitButton.innerHTML = '🧽 消しゴムモード終了';
+    exitButton.style.cssText = `
+        position: fixed;
+        top: 20px;
+        left: 50%;
+        transform: translateX(-50%);
+        padding: 12px 20px;
+        background: linear-gradient(135deg, #ff6b6b, #dc3545);
+        color: white;
+        border: none;
+        border-radius: 25px;
+        font-weight: bold;
+        cursor: pointer;
+        z-index: 10001;
+        box-shadow: 0 4px 12px rgba(220, 53, 69, 0.3);
+    `;
+
+    exitButton.addEventListener('click', exitEraserMode);
+    document.body.appendChild(exitButton);
+
+    showSuccessMessage('消しゴムモード開始！Ctrl+Zで元に戻せます');
+}
+
+// 以下、既存の関数群（省略部分は元のまま）
 async function handleBookmarkImport() {
+    saveUndoState(); // インポート前の状態を保存
+
     try {
         const bookmarks = await chrome.bookmarks.getTree();
-
-        // カスタム選択ダイアログ作成
         showImportMethodDialog(bookmarks);
-
     } catch (error) {
         console.log('[ERROR] Failed to import bookmarks:', error);
         showErrorMessage('ブックマークの読み込みに失敗しました');
     }
 }
+
+// 残りの関数は元のコードと同じですが、重要な修正点：
+// 1. サイドパネルのdragendイベントに安全チェック追加
+// 2. データ変更後にsaveUndoState()を呼び出す
+
+// 残りの関数群...（元のコードをそのまま使用、但しdragendに安全チェック追加）
+
 
 // 新しい関数：インポート方式選択ダイアログ
 function showImportMethodDialog(bookmarks) {
@@ -534,7 +958,9 @@ function createBookmarkSidePanel(bookmarks) {
                 });
 
                 bookmarkEl.addEventListener('dragend', (e) => {
-                    bookmarkEl.style.opacity = '1';
+                    if (bookmarkEl && bookmarkEl.style) {
+                        bookmarkEl.style.opacity = '1';
+                    }
                 });
 
                 content.appendChild(bookmarkEl);
@@ -918,3 +1344,445 @@ function showToast(message, type = 'info') {
         }, 300);
     }, 3000);
 }
+
+
+    // ゴミ箱モード選択ダイアログ
+    function showTrashAreaDialog() {
+        const dialog = document.createElement('div');
+        dialog.className = 'trash-dialog';
+        dialog.innerHTML = `
+        <div class="trash-dialog-overlay">
+            <div class="trash-dialog-content">
+                <h3>🗑️ ゴミ箱エリア</h3>
+                <p>削除方式を選択してください</p>
+                
+                <div class="trash-options">
+                    <button class="trash-button" id="trash-static">
+                        <div class="trash-icon">📍</div>
+                        <div class="trash-text">
+                            <strong>固定ゴミ箱</strong>
+                            <small>ドラッグ&ドロップで削除</small>
+                        </div>
+                    </button>
+                    
+                    <button class="trash-button" id="trash-eraser">
+                        <div class="trash-icon">🧽</div>
+                        <div class="trash-text">
+                            <strong>消しゴム</strong>
+                            <small>ドラッグして範囲削除</small>
+                        </div>
+                    </button>
+                </div>
+                
+                <button class="cancel-button" id="trash-cancel">キャンセル</button>
+            </div>
+        </div>
+    `;
+
+        // スタイル設定
+        const style = document.createElement('style');
+        style.textContent = `
+        .trash-dialog {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 10000;
+            background: rgba(0,0,0,0.5);
+        }
+        
+        .trash-dialog-overlay {
+            width: 100%;
+            height: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .trash-dialog-content {
+            background: white;
+            border-radius: 16px;
+            padding: 24px;
+            max-width: 400px;
+            text-align: center;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.3);
+        }
+        
+        .trash-options {
+            display: flex;
+            gap: 12px;
+            margin-bottom: 20px;
+        }
+        
+        .trash-button {
+            flex: 1;
+            padding: 16px 12px;
+            border: 2px solid #e9ecef;
+            border-radius: 12px;
+            background: #f8f9fa;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .trash-button:hover {
+            border-color: #dc3545;
+            background: #ffe6e6;
+            transform: translateY(-2px);
+        }
+        
+        .trash-icon {
+            font-size: 24px;
+        }
+        
+        .trash-text strong {
+            display: block;
+            font-size: 14px;
+            margin-bottom: 4px;
+        }
+        
+        .trash-text small {
+            font-size: 10px;
+            opacity: 0.7;
+            white-space: nowrap;
+        }
+    `;
+        document.head.appendChild(style);
+
+        // イベントリスナー
+        dialog.querySelector('#trash-static').addEventListener('click', () => {
+            document.body.removeChild(dialog);
+            createStaticTrashArea();
+        });
+
+        dialog.querySelector('#trash-eraser').addEventListener('click', () => {
+            document.body.removeChild(dialog);
+            createEraserMode();
+        });
+
+        dialog.querySelector('#trash-cancel').addEventListener('click', () => {
+            document.body.removeChild(dialog);
+        });
+
+        dialog.addEventListener('click', (e) => {
+            if (e.target.className === 'trash-dialog-overlay') {
+                document.body.removeChild(dialog);
+            }
+        });
+
+        document.body.appendChild(dialog);
+    }
+
+    // 固定ゴミ箱エリア作成
+    function createStaticTrashArea() {
+        // 既存ゴミ箱があれば削除
+        const existingTrash = document.getElementById('static-trash-area');
+        if (existingTrash) {
+            document.body.removeChild(existingTrash);
+        }
+
+        const trashArea = document.createElement('div');
+        trashArea.id = 'static-trash-area';
+        trashArea.innerHTML = `
+        <div class="trash-header" id="trash-header">
+            <span class="drag-handle">⋮⋮</span>
+            <span class="trash-title">🗑️ ゴミ箱</span>
+            <button id="close-trash">✕</button>
+        </div>
+        <div class="trash-drop-zone">
+            <div class="trash-icon-large">🗑️</div>
+            <div class="trash-message">ここにドラッグして削除</div>
+        </div>
+    `;
+
+        // スタイル
+        const style = document.createElement('style');
+        style.textContent = `
+        #static-trash-area {
+            position: fixed;
+            top: 200px;
+            left: 20px;
+            width: 120px;
+            height: 120px;
+            background: linear-gradient(135deg, #ff6b6b, #dc3545);
+            border: 3px solid #fff;
+            border-radius: 16px;
+            z-index: 1000;
+            box-shadow: 0 8px 24px rgba(220, 53, 69, 0.3);
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+        
+        .trash-header {
+            padding: 8px;
+            background: rgba(0,0,0,0.2);
+            color: white;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            cursor: move;
+            font-size: 10px;
+        }
+        
+        .trash-drop-zone {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            text-align: center;
+        }
+        
+        .trash-icon-large {
+            font-size: 32px;
+            margin-bottom: 4px;
+        }
+        
+        .trash-message {
+            font-size: 9px;
+            font-weight: bold;
+        }
+        
+        #static-trash-area.drag-over {
+            background: linear-gradient(135deg, #ff4757, #c0392b);
+            transform: scale(1.1);
+        }
+        
+        #close-trash {
+            background: none;
+            border: none;
+            color: white;
+            cursor: pointer;
+            font-size: 12px;
+        }
+    `;
+        document.head.appendChild(style);
+
+        // ドラッグ&ドロップ機能
+        trashArea.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            trashArea.classList.add('drag-over');
+        });
+
+        trashArea.addEventListener('dragleave', (e) => {
+            if (!trashArea.contains(e.relatedTarget)) {
+                trashArea.classList.remove('drag-over');
+            }
+        });
+
+        trashArea.addEventListener('drop', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            trashArea.classList.remove('drag-over');
+
+            // タイル削除処理
+            if (window.linkCanvas && window.linkCanvas.dragState.draggedTile) {
+                const tile = window.linkCanvas.dragState.draggedTile;
+
+                // グループから除外
+                if (tile.groupId) {
+                    const group = window.linkCanvas.groups.get(tile.groupId);
+                    if (group) {
+                        group.removeTile(tile);
+                        if (group.tiles.length === 0) {
+                            group.element.remove();
+                            window.linkCanvas.groups.delete(group.id);
+                        }
+                    }
+                }
+
+                // タイル削除
+                tile.element.remove();
+                window.linkCanvas.tiles.delete(tile.id);
+                window.linkCanvas.saveData();
+
+                // フィードバック
+                showSuccessMessage('タイルを削除しました');
+
+                console.log('[INFO] Tile deleted via trash area:', tile.id);
+            }
+        });
+
+        // 移動機能
+        makePanelDraggable(trashArea);
+
+        // 閉じるボタン
+        trashArea.querySelector('#close-trash').addEventListener('click', () => {
+            document.body.removeChild(trashArea);
+        });
+
+        document.body.appendChild(trashArea);
+        showSuccessMessage('固定ゴミ箱を表示しました');
+    }
+
+    // 消しゴムモード作成
+// createEraserMode関数を以下に置換：
+
+function createEraserMode() {
+    let eraserActive = false;
+    let eraserElement = null;
+    let deletedTiles = []; // 削除されたタイルの記録
+
+    // 消しゴム要素作成
+    function createEraser(x, y) {
+        eraserElement = document.createElement('div');
+        eraserElement.id = 'eraser-cursor';
+        eraserElement.innerHTML = '🧽';
+        eraserElement.style.cssText = `
+            position: fixed;
+            left: ${x - 25}px;
+            top: ${y - 25}px;
+            width: 50px;
+            height: 50px;
+            background: rgba(255, 107, 107, 0.8);
+            border: 3px solid #fff;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 20px;
+            z-index: 10000;
+            pointer-events: none;
+            box-shadow: 0 4px 12px rgba(220, 53, 69, 0.4);
+        `;
+        document.body.appendChild(eraserElement);
+    }
+
+    // マウスイベント
+    function handleMouseDown(e) {
+        if (e.button === 0) { // 左クリック
+            eraserActive = true;
+            createEraser(e.clientX, e.clientY);
+            checkTileCollision(e.clientX, e.clientY);
+        }
+    }
+
+    function handleMouseMove(e) {
+        if (eraserActive && eraserElement) {
+            eraserElement.style.left = (e.clientX - 25) + 'px';
+            eraserElement.style.top = (e.clientY - 25) + 'px';
+            checkTileCollision(e.clientX, e.clientY);
+        }
+    }
+
+    function handleMouseUp(e) {
+        if (eraserActive) {
+            eraserActive = false;
+            if (eraserElement) {
+                document.body.removeChild(eraserElement);
+                eraserElement = null;
+            }
+
+            // 削除後にデータ保存（重要！）
+            if (deletedTiles.length > 0) {
+                window.linkCanvas.saveData();
+                console.log('[INFO] Eraser session complete, data saved');
+                deletedTiles = [];
+            }
+        }
+    }
+
+    // createEraserMode関数内のcheckTileCollision関数を修正：
+
+    function checkTileCollision(mouseX, mouseY) {
+        const elements = document.elementsFromPoint(mouseX, mouseY);
+
+        for (const element of elements) {
+            if (element.classList.contains('link-tile')) {
+                const tileId = Array.from(window.linkCanvas.tiles.entries())
+                    .find(([id, tile]) => tile.element === element)?.[0];
+
+                if (tileId && !deletedTiles.includes(tileId)) {
+                    // 【重要】最初のタイル削除前にUndo状態保存
+                    if (deletedTiles.length === 0) {
+                        saveUndoState();
+                    }
+
+                    const tile = window.linkCanvas.tiles.get(tileId);
+
+                    if (tile.groupId) {
+                        const group = window.linkCanvas.groups.get(tile.groupId);
+                        if (group) {
+                            group.removeTile(tile);
+                            if (group.tiles.length === 0) {
+                                group.element.remove();
+                                window.linkCanvas.groups.delete(group.id);
+                            }
+                        }
+                    }
+
+                    element.remove();
+                    window.linkCanvas.tiles.delete(tileId);
+                    deletedTiles.push(tileId);
+
+                    console.log('[INFO] Tile erased:', tileId);
+                }
+                break;
+            }
+        }
+    }
+
+
+    // イベントリスナー追加
+    document.addEventListener('mousedown', handleMouseDown);
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', handleMouseUp);
+
+    // 終了機能
+    function exitEraserMode() {
+        document.removeEventListener('mousedown', handleMouseDown);
+        document.removeEventListener('mousemove', handleMouseMove);
+        document.removeEventListener('mouseup', handleMouseUp);
+
+        if (eraserElement) {
+            document.body.removeChild(eraserElement);
+        }
+
+        // 最終データ保存
+        if (deletedTiles.length > 0) {
+            window.linkCanvas.saveData();
+        }
+
+        // 終了ボタン削除
+        const exitButton = document.getElementById('exit-eraser');
+        if (exitButton) {
+            document.body.removeChild(exitButton);
+        }
+
+        showSuccessMessage('消しゴムモード終了');
+    }
+
+    // 終了ボタン作成
+    const exitButton = document.createElement('button');
+    exitButton.id = 'exit-eraser';
+    exitButton.innerHTML = '消しゴムモード終了';
+    exitButton.style.cssText = `
+        position: fixed;
+        top: 20px;
+        left: 50%;
+        transform: translateX(-50%);
+        padding: 12px 20px;
+        background: linear-gradient(135deg, #ff6b6b, #dc3545);
+        color: white;
+        border: none;
+        border-radius: 25px;
+        font-weight: bold;
+        cursor: pointer;
+        z-index: 10001;
+        box-shadow: 0 4px 12px rgba(220, 53, 69, 0.3);
+    `;
+
+    exitButton.addEventListener('click', exitEraserMode);
+    document.body.appendChild(exitButton);
+
+    showSuccessMessage('左クリック+ドラッグでタイルを削除');
+}
+
+
+
