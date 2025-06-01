@@ -161,12 +161,18 @@ class LinkCanvas {
         return null;
     }
 
+    // createLinkTileメソッドを以下に置換：
+
     createLinkTile(url, title, position) {
         const tileId = this.generateId();
+
+        // 自動タイトル改善
+        const improvedTitle = this.generateSmartTitle(url, title);
+
         const tile = {
             id: tileId,
             url: url,
-            title: title,
+            title: improvedTitle,
             position: position,
             groupId: null,
             element: null
@@ -185,6 +191,122 @@ class LinkCanvas {
         this.saveData();
         return tile;
     }
+
+    // 新しいメソッド：スマートタイトル生成
+    generateSmartTitle(url, originalTitle) {
+        try {
+            // 元のタイトルが有効な場合はそのまま使用
+            const cleanTitle = this.extractTitle(originalTitle);
+            if (cleanTitle && cleanTitle !== 'New Link' && cleanTitle.length > 2) {
+                return cleanTitle;
+            }
+
+            // URLからドメインを抽出
+            const urlObj = new URL(url);
+            const domain = urlObj.hostname.toLowerCase();
+            const path = urlObj.pathname;
+
+            // 人気サイトの辞書データ
+            const siteTitles = {
+                // 日本のサイト
+                'youtube.com': 'YouTube',
+                'www.youtube.com': 'YouTube',
+                'm.youtube.com': 'YouTube',
+                'twitter.com': 'Twitter',
+                'x.com': 'X (Twitter)',
+                'www.twitter.com': 'Twitter',
+                'github.com': 'GitHub',
+                'www.github.com': 'GitHub',
+                'qiita.com': 'Qiita',
+                'zenn.dev': 'Zenn',
+                'note.com': 'note',
+                'www.amazon.co.jp': 'Amazon',
+                'amazon.co.jp': 'Amazon',
+                'www.amazon.com': 'Amazon',
+                'amazon.com': 'Amazon',
+                'google.com': 'Google',
+                'www.google.com': 'Google',
+                'maps.google.com': 'Google Maps',
+                'drive.google.com': 'Google Drive',
+                'docs.google.com': 'Google Docs',
+                'gmail.com': 'Gmail',
+                'mail.google.com': 'Gmail',
+                'facebook.com': 'Facebook',
+                'www.facebook.com': 'Facebook',
+                'instagram.com': 'Instagram',
+                'www.instagram.com': 'Instagram',
+                'linkedin.com': 'LinkedIn',
+                'www.linkedin.com': 'LinkedIn',
+                'reddit.com': 'Reddit',
+                'www.reddit.com': 'Reddit',
+                'stackoverflow.com': 'Stack Overflow',
+                'stackexchange.com': 'Stack Exchange',
+                'wikipedia.org': 'Wikipedia',
+                'ja.wikipedia.org': 'Wikipedia',
+                'en.wikipedia.org': 'Wikipedia',
+                'www.wikipedia.org': 'Wikipedia',
+                'microsoft.com': 'Microsoft',
+                'www.microsoft.com': 'Microsoft',
+                'office.com': 'Microsoft Office',
+                'outlook.com': 'Outlook',
+                'apple.com': 'Apple',
+                'www.apple.com': 'Apple',
+                'developer.apple.com': 'Apple Developer',
+                'netflix.com': 'Netflix',
+                'www.netflix.com': 'Netflix',
+                'spotify.com': 'Spotify',
+                'open.spotify.com': 'Spotify',
+                'discord.com': 'Discord',
+                'discordapp.com': 'Discord',
+                'slack.com': 'Slack',
+                'zoom.us': 'Zoom',
+                'teams.microsoft.com': 'Microsoft Teams',
+                'www.figma.com': 'Figma',
+                'figma.com': 'Figma',
+                'canva.com': 'Canva',
+                'www.canva.com': 'Canva',
+                'notion.so': 'Notion',
+                'www.notion.so': 'Notion',
+                'trello.com': 'Trello',
+                'codepen.io': 'CodePen',
+                'jsfiddle.net': 'JSFiddle',
+                'replit.com': 'Replit',
+                'codesandbox.io': 'CodeSandbox'
+            };
+
+            // 辞書にある場合
+            if (siteTitles[domain]) {
+                return siteTitles[domain];
+            }
+
+            // 特定パターンの処理
+            if (domain.includes('github.com') && path.length > 1) {
+                const parts = path.split('/').filter(p => p);
+                if (parts.length >= 2) {
+                    return `${parts[0]}/${parts[1]} - GitHub`;
+                }
+            }
+
+            if (domain.includes('youtube.com') && path.includes('/watch')) {
+                return 'YouTube動画';
+            }
+
+            if (domain.includes('wikipedia.org')) {
+                return 'Wikipedia';
+            }
+
+            // ドメインからの推測タイトル生成
+            const mainDomain = domain.replace('www.', '').split('.')[0];
+            const capitalizedDomain = mainDomain.charAt(0).toUpperCase() + mainDomain.slice(1);
+
+            return capitalizedDomain;
+
+        } catch (error) {
+            console.log('[DEBUG] Title generation failed, using fallback');
+            return originalTitle || 'New Link';
+        }
+    }
+
 
     createTileElement(tile) {
         const element = document.createElement('div');
