@@ -205,18 +205,30 @@ function createBookmarkImportDialog(bookmarks) {
             padding: 10px;
             margin: 10px 0;
         }
+
         .bookmark-item {
-            padding: 4px 0;
+            padding: 6px 4px;
             cursor: pointer;
             display: flex;
             align-items: center;
+            border-radius: 4px;
+            transition: background-color 0.2s ease;
         }
         .bookmark-item:hover {
-            background: #f0f0f0;
+            background: #e3f2fd;
         }
         .bookmark-item input[type="checkbox"] {
             margin-right: 8px;
+            cursor: pointer;
         }
+        .bookmark-item img {
+            margin-right: 8px;
+        }
+        .bookmark-item span {
+            flex: 1;
+            cursor: pointer;
+        }
+
         .dialog-buttons {
             display: flex;
             gap: 10px;
@@ -242,29 +254,23 @@ function createBookmarkImportDialog(bookmarks) {
         if (node.url) {
             // リーフ（URLあり）
             div.className = 'bookmark-item';
+            // renderBookmarkNode関数内のdiv.innerHTML部分を以下に置換：
+
             div.innerHTML = `
-                <input type="checkbox" data-url="${node.url}" data-title="${node.title}">
-                <img src="https://www.google.com/s2/favicons?domain=${new URL(node.url).hostname}" width="16" height="16" style="margin-right: 8px;">
-                ${node.title || node.url}
+                <input type="checkbox" data-url="${node.url}" data-title="${node.title}" id="cb-${Date.now()}-${Math.random()}">
+                <img src="https://www.google.com/s2/favicons?domain=${new URL(node.url).hostname}" width="16" height="16">
+                <span>${node.title || node.url}</span>
             `;
 
-            const checkbox = div.querySelector('input[type="checkbox"]');
-            checkbox.addEventListener('change', (e) => {
-                if (e.target.checked) {
-                    selectedBookmarks.add({
-                        url: node.url,
-                        title: node.title || new URL(node.url).hostname
-                    });
-                } else {
-                    // Set から削除（参照比較のため別方法）
-                    for (const bookmark of selectedBookmarks) {
-                        if (bookmark.url === node.url) {
-                            selectedBookmarks.delete(bookmark);
-                            break;
-                        }
-                    }
+            // クリック領域拡大
+            div.addEventListener('click', (e) => {
+                if (e.target.tagName !== 'INPUT') {
+                    const checkbox = div.querySelector('input[type="checkbox"]');
+                    checkbox.checked = !checkbox.checked;
+                    checkbox.dispatchEvent(new Event('change'));
                 }
             });
+
         } else {
             // フォルダ
             div.innerHTML = `<strong>📁 ${node.title}</strong>`;

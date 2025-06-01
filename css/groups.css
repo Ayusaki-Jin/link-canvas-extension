@@ -33,18 +33,23 @@
     justify-content: center;
 }
 
+/* 既存の.group-area.collapsed を以下に置換： */
+
 .group-area.collapsed {
     height: 50px !important;
-    overflow: hidden;
+    min-height: 50px !important;
+    max-height: 50px !important;
+    overflow: hidden !important;
 }
 
 .group-area.collapsed .link-tile {
     display: none !important;
+    visibility: hidden !important;
 }
 
-/* グループ色バリエーション */
-.group-color-blue .group-header {
-    background: #007acc;
+.group-area.collapsed .group-header {
+    display: flex !important;
+    visibility: visible !important;
 }
 
 .group-color-green .group-header {

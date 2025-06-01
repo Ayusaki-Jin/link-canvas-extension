@@ -267,21 +267,40 @@ class LinkCanvas {
         preview.style.display = 'block';
     }
 
+    // hideDropPreviewメソッドを以下に置換：
+
     hideDropPreview() {
         const preview = document.getElementById('drop-preview');
         if (preview) {
             preview.style.display = 'none';
+            preview.remove(); // 完全に削除
+            console.log('[DEBUG] Drop preview removed');
         }
+
+        // 全ての破線プレビューを削除（念のため）
+        const allPreviews = document.querySelectorAll('.drop-preview');
+        allPreviews.forEach(p => p.remove());
     }
+
+
+    // 既存のclearDragStateメソッドを以下に置換：
 
     clearDragState() {
         this.dragState.isDragging = false;
         this.dragState.draggedTile = null;
         this.dragState.startPosition = null;
+
+        // ドロップ位置プレビューを確実に削除
+        this.hideDropPreview();
+
+        // ホバータイマーもクリア
         if (this.autoGrouping) {
             this.autoGrouping.clearHoverTimer();
         }
+
+        console.log('[DEBUG] Drag state completely cleared');
     }
+
 
     extractTitle(titleData) {
         if (typeof titleData === 'string' && titleData.includes('<')) {

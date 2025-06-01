@@ -124,8 +124,14 @@ class AutoGrouping {
 
             console.log('[INFO] Auto-group created successfully:', groupId);
 
-            // タイマー状態クリア
+            // 【重要修正】ドラッグ状態を確実にクリア
             this.clearHoverTimer();
+            if (this.canvas.dragState) {
+                this.canvas.dragState.isDragging = false;
+                this.canvas.dragState.draggedTile = null;
+                this.canvas.dragState.startPosition = null;
+                console.log('[DEBUG] Drag state forcefully cleared');
+                }
 
             return groupArea;
 

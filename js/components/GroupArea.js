@@ -84,6 +84,15 @@ class GroupArea {
                 this.startGridDrag(e);
             }
         });
+        // グループエリア全体でのドラッグ移動（空の領域）
+        this.element.addEventListener('mousedown', (e) => {
+            // タイル上でもヘッダー上でもない場合にグループ移動
+            if (e.target === this.element && e.button === 0) {
+                e.preventDefault();
+                console.log('[DEBUG] Group area drag started');
+                this.startGridDrag(e);
+            }
+        });
 
         // グループ全体でのドラッグ&ドロップ受け入れ
         this.element.addEventListener('dragover', (e) => {
@@ -115,25 +124,116 @@ class GroupArea {
         });
     }
 
+    // 既存のtoggleExpansionメソッドを以下に完全置換：
+
     toggleExpansion() {
         this.isExpanded = !this.isExpanded;
 
+        console.log('[DEBUG] Toggling expansion:', this.isExpanded, 'for group:', this.id);
+        console.log('[DEBUG] Current size:', this.size, 'gridSize:', this.gridSize);
+
+        // 展開部分のヘッダー復元箇所を以下に置換：
+
         if (this.isExpanded) {
+            // 展開状態
+            console.log('[DEBUG] Expanding group...');
             this.element.classList.remove('collapsed');
+
+            // 元のサイズに戻す（強制）
             this.element.style.height = this.size.height + 'px';
-            this.tiles.forEach(tile => {
-                tile.element.style.display = 'flex';
+            this.element.style.width = this.size.width + 'px';
+            this.element.style.overflow = 'visible';
+            this.element.style.minHeight = 'auto';
+            this.element.style.maxHeight = 'none';
+            this.element.style.minWidth = 'auto';
+            this.element.style.maxWidth = 'none';
+
+            // ヘッダーを元のスタイルに完全復元
+            this.header.style.display = 'flex';
+            this.header.style.visibility = 'visible';
+            this.header.style.position = 'absolute';
+            this.header.style.top = '-30px';
+            this.header.style.left = '0';
+            this.header.style.right = 'auto';
+            this.header.style.width = 'auto';
+            this.header.style.height = '24px';
+            this.header.style.borderRadius = '12px 12px 0 0';
+            this.header.style.padding = '0 12px';
+            this.header.style.fontSize = '11px';
+            this.header.style.fontWeight = 'bold';
+            this.header.style.justifyContent = 'center';
+            this.header.style.alignItems = 'center';
+            this.header.style.minWidth = '80px';
+            this.header.textContent = this.name;
+
+            console.log('[DEBUG] Header fully restored to original style');
+
+            // タイルを表示
+            this.tiles.forEach((tile, index) => {
+                if (tile.element) {
+                    tile.element.style.display = 'flex';
+                    tile.element.style.visibility = 'visible';
+                    console.log('[DEBUG] Tile', index, 'made visible');
+                }
             });
-        } else {
-            this.element.classList.add('collapsed');
-            this.element.style.height = this.gridSize + 'px';
-            this.tiles.forEach(tile => {
-                tile.element.style.display = 'none';
-            });
+
+            console.log('[DEBUG] Group expanded to size:', this.size);
         }
 
-        console.log('[INFO] Group expansion toggled:', this.id, this.isExpanded);
+        else {
+            // 縮小状態（1マス表示）
+            console.log('[DEBUG] Collapsing group...');
+            this.element.classList.add('collapsed');
+
+            // 強制的に1マスサイズに変更（インラインスタイルで確実に）
+            this.element.style.height = '50px';
+            this.element.style.width = '50px';
+            this.element.style.minHeight = '50px';
+            this.element.style.maxHeight = '50px';
+            this.element.style.minWidth = '50px';
+            this.element.style.maxWidth = '50px';
+            this.element.style.overflow = 'hidden';
+
+            console.log('[DEBUG] Forced element size to 50x50px');
+
+            // ヘッダーをコンパクト表示
+            this.header.style.display = 'flex';
+            this.header.style.visibility = 'visible';
+            this.header.style.position = 'static';
+            this.header.style.width = '100%';
+            this.header.style.height = '100%';
+            this.header.style.top = '0';
+            this.header.style.left = '0';
+            this.header.style.right = '0';
+            this.header.style.borderRadius = '8px';
+            this.header.style.fontSize = '14px';
+            this.header.style.fontWeight = 'bold';
+            this.header.style.justifyContent = 'center';
+            this.header.style.alignItems = 'center';
+            this.header.textContent = this.tiles.length.toString();
+
+            console.log('[DEBUG] Header set to tile count:', this.tiles.length);
+
+            // タイルを完全に隠す
+            this.tiles.forEach((tile, index) => {
+                if (tile.element) {
+                    tile.element.style.display = 'none';
+                    tile.element.style.visibility = 'hidden';
+                    console.log('[DEBUG] Tile', index, 'hidden');
+                }
+            });
+
+            console.log('[DEBUG] Group collapsed to 50x50px');
+        }
+
+        // データ保存
+        if (window.linkCanvas) {
+            window.linkCanvas.saveData();
+        }
     }
+
+
+
 
     startGridDrag(e) {
         const startX = e.clientX;
