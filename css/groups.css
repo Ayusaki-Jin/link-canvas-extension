@@ -52,6 +52,8 @@
     visibility: visible !important;
 }
 
+
+
 .group-color-green .group-header {
     background: #28a745;
 }
@@ -84,42 +86,89 @@
     background: #6c757d;
 }
 
-.group-color-blue {
-    border-color: #007acc;
+
+
+/* グループ色バリエーション（最強優先度） */
+.group-area.group-color-blue {
+    border-color: #007acc !important;
 }
 
-.group-color-green {
-    border-color: #28a745;
+.group-area.group-color-blue .group-header {
+    background-color: #007acc !important;
+    color: white !important;
 }
 
-.group-color-red {
-    border-color: #dc3545;
+.group-area.group-color-green {
+    border-color: #28a745 !important;
 }
 
-.group-color-orange {
-    border-color: #fd7e14;
+.group-area.group-color-green .group-header {
+    background-color: #28a745 !important;
+    color: white !important;
 }
 
-.group-color-purple {
-    border-color: #6f42c1;
+.group-area.group-color-red {
+    border-color: #dc3545 !important;
 }
 
-.group-color-teal {
-    border-color: #20c997;
+.group-area.group-color-red .group-header {
+    background-color: #dc3545 !important;
+    color: white !important;
 }
 
-.group-color-pink {
-    border-color: #e83e8c;
+.group-area.group-color-orange {
+    border-color: #fd7e14 !important;
 }
 
-.group-color-yellow {
-    border-color: #ffc107;
+.group-area.group-color-orange .group-header {
+    background-color: #fd7e14 !important;
+    color: white !important;
 }
 
-.group-color-gray {
-    border-color: #6c757d;
+.group-area.group-color-purple {
+    border-color: #6f42c1 !important;
 }
 
+.group-area.group-color-purple .group-header {
+    background-color: #6f42c1 !important;
+    color: white !important;
+}
+
+.group-area.group-color-teal {
+    border-color: #20c997 !important;
+}
+
+.group-area.group-color-teal .group-header {
+    background-color: #20c997 !important;
+    color: white !important;
+}
+
+.group-area.group-color-pink {
+    border-color: #e83e8c !important;
+}
+
+.group-area.group-color-pink .group-header {
+    background-color: #e83e8c !important;
+    color: white !important;
+}
+
+.group-area.group-color-yellow {
+    border-color: #ffc107 !important;
+}
+
+.group-area.group-color-yellow .group-header {
+    background-color: #ffc107 !important;
+    color: #333 !important;
+}
+
+.group-area.group-color-gray {
+    border-color: #6c757d !important;
+}
+
+.group-area.group-color-gray .group-header {
+    background-color: #6c757d !important;
+    color: white !important;
+}
 .group-area.hover {
     border-color: #007acc !important;
     background: rgba(0, 122, 204, 0.1);
