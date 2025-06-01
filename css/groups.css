@@ -1,0 +1,166 @@
+/* グループエリア */
+
+/* 新しいグループシステム用 */
+.group-area {
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    transition: box-shadow 0.2s ease;
+}
+
+.group-area:hover {
+    box-shadow: 0 6px 16px rgba(0, 0, 0, 0.25);
+}
+
+.group-header {
+    transition: all 0.2s ease;
+}
+
+.group-header:hover {
+    filter: brightness(1.1);
+}
+
+/* リサイズハンドル関連を削除 */
+.resize-handle {
+    display: none !important;
+}
+
+.group-area {
+    position: absolute;
+    border: 2px solid transparent;
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.8);
+    min-width: 100px;
+    min-height: 100px;
+    transition: all 0.2s ease;
+}
+
+.group-area.hover {
+    border-color: #007acc;
+    background: rgba(0, 122, 204, 0.05);
+}
+
+/* グループヘッダー */
+.group-header {
+    position: absolute;
+    top: -30px;
+    left: 0;
+    height: 24px;
+    border-radius: 12px 12px 0 0;
+    display: flex;
+    align-items: center;
+    padding: 0 12px;
+    font-size: 12px;
+    font-weight: 500;
+    color: #fff;
+    cursor: pointer;
+    user-select: none;
+    transition: all 0.2s ease;
+    min-width: 80px;
+}
+
+.group-header.compact {
+    width: 20px;
+    padding: 0;
+    border-radius: 12px;
+    justify-content: center;
+}
+
+.group-header.compact .group-name {
+    display: none;
+}
+
+.group-header:hover {
+    filter: brightness(1.1);
+}
+
+/* グループ名編集 */
+.group-name-input {
+    background: transparent;
+    border: none;
+    color: #fff;
+    font-size: 12px;
+    font-weight: 500;
+    outline: none;
+    width: 100px;
+}
+
+.group-name-input::placeholder {
+    color: rgba(255, 255, 255, 0.8);
+}
+
+/* グループ色設定 */
+.group-color-blue {
+    background-color: #007acc;
+}
+
+.group-color-green {
+    background-color: #28a745;
+}
+
+.group-color-red {
+    background-color: #dc3545;
+}
+
+.group-color-orange {
+    background-color: #fd7e14;
+}
+
+.group-color-purple {
+    background-color: #6f42c1;
+}
+
+.group-color-teal {
+    background-color: #20c997;
+}
+
+.group-color-pink {
+    background-color: #e83e8c;
+}
+
+.group-color-yellow {
+    background-color: #ffc107;
+}
+
+.group-color-gray {
+    background-color: #6c757d;
+}
+
+/* グループ展開/縮小状態 */
+.group-area.collapsed {
+    overflow: hidden;
+    height: 60px !important;
+}
+
+.group-area.collapsed .link-tile {
+    opacity: 0;
+    pointer-events: none;
+}
+
+/* グループ内のタイル */
+.group-area .link-tile {
+    position: relative;
+    margin: 5px;
+    z-index: 1;
+}
+
+
+
+/* グループ作成中のアニメーション */
+.group-forming {
+    animation: groupFormation 0.8s ease-out;
+}
+
+@keyframes groupFormation {
+    0% {
+        transform: scale(0.8);
+        opacity: 0;
+    }
+
+    50% {
+        transform: scale(1.05);
+    }
+
+    100% {
+        transform: scale(1);
+        opacity: 1;
+    }
+}
