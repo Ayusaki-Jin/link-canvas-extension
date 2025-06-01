@@ -1,59 +1,30 @@
 class GroupArea {
-    constructor(id, color, name, gridPosition, tileCount = 2) {
+    constructor(id, color, name, position, size) {
         this.id = id;
-        this.color = color;
+        this.color = color.hex || color;
+        this.colorName = color.name || 'blue';
         this.name = name;
-
-        // 古いデータ形式への対応
-        if (gridPosition && typeof gridPosition.x === 'number') {
-            this.gridPosition = gridPosition;
-        } else if (gridPosition && typeof gridPosition === 'object') {
-            // 古い形式の場合はピクセル座標をグリッド座標に変換
-            this.gridPosition = {
-                x: Math.floor((gridPosition.x || 0) / 50),
-                y: Math.floor((gridPosition.y || 0) / 50)
-            };
-        } else {
-            // デフォルト値
-            this.gridPosition = { x: 0, y: 0 };
-        }
-
-        this.gridSize = window.gridManager ? window.gridManager.gridSize : 50;
+        this.position = position || { x: 0, y: 0 };
+        this.size = size || { width: 120, height: 100 };
         this.tiles = [];
         this.isExpanded = true;
-        this.showName = true;
-        this.isCollapsed = false;
+        this.gridSize = 50;
 
-        // グリッドベースサイズ計算
-        this.calculateGridSize(tileCount);
         this.element = this.createElement();
         this.header = this.createHeader();
         this.setupEventListeners();
     }
 
-    calculateGridSize(tileCount) {
-        // タイル数に応じて最適なグリッドサイズを計算
-        const tilesPerRow = Math.ceil(Math.sqrt(tileCount));
-        this.gridWidth = Math.max(tilesPerRow, 2); // 最小2マス幅
-        this.gridHeight = Math.ceil(tileCount / tilesPerRow) + 1; // +1はヘッダー分
-
-        this.pixelWidth = this.gridWidth * this.gridSize;
-        this.pixelHeight = this.gridHeight * this.gridSize;
-    }
-
     createElement() {
         const element = document.createElement('div');
-        element.className = 'group-area';
+        element.className = `group-area group-color-${this.colorName}`;
         element.id = this.id;
         element.style.position = 'absolute';
-        element.style.left = (this.gridPosition.x * this.gridSize) + 'px';
-        element.style.top = (this.gridPosition.y * this.gridSize) + 'px';
-        element.style.width = this.pixelWidth + 'px';
-        element.style.height = this.pixelHeight + 'px';
-        element.style.border = `3px solid ${this.color}`;
-        element.style.borderRadius = '12px';
-        element.style.background = 'rgba(255,255,255,0.9)';
-        element.style.zIndex = '10';
+        element.style.left = this.position.x + 'px';
+        element.style.top = this.position.y + 'px';
+        element.style.width = this.size.width + 'px';
+        element.style.height = this.size.height + 'px';
+        element.style.borderColor = this.color;
 
         return element;
     }
@@ -61,21 +32,7 @@ class GroupArea {
     createHeader() {
         const header = document.createElement('div');
         header.className = 'group-header';
-        header.style.position = 'absolute';
-        header.style.top = '5px';
-        header.style.left = '5px';
-        header.style.right = '5px';
-        header.style.height = '24px';
         header.style.backgroundColor = this.color;
-        header.style.borderRadius = '8px';
-        header.style.color = 'white';
-        header.style.fontSize = '12px';
-        header.style.fontWeight = 'bold';
-        header.style.display = 'flex';
-        header.style.alignItems = 'center';
-        header.style.justifyContent = 'center';
-        header.style.cursor = 'pointer';
-        header.style.userSelect = 'none';
         header.textContent = this.name;
 
         this.element.appendChild(header);
@@ -83,115 +40,101 @@ class GroupArea {
     }
 
     setupEventListeners() {
-        // ヘッダークリック：展開/縮小
+        // ヘッダークリック - 展開/縮小
         this.header.addEventListener('click', (e) => {
             e.stopPropagation();
-            this.toggleCollapse();
+            this.toggleExpansion();
         });
 
-        // グループ全体移動（空の領域クリック）
-        this.element.addEventListener('mousedown', (e) => {
-            if (e.target === this.element && !this.isCollapsed) {
+        // ヘッダードラッグで移動（グリッド制約）
+        this.header.addEventListener('mousedown', (e) => {
+            if (e.button === 0) {
+                e.preventDefault();
                 this.startGridDrag(e);
             }
         });
 
-        // ヘッダードラッグで移動
-        this.header.addEventListener('mousedown', (e) => {
-            e.preventDefault();
-            this.startGridDrag(e);
-        });
-
-        // タイル追加（ドロップ）
+        // グループ全体でのドラッグ&ドロップ受け入れ
         this.element.addEventListener('dragover', (e) => {
             e.preventDefault();
-            this.element.style.backgroundColor = 'rgba(0,122,204,0.2)';
+            this.element.classList.add('hover');
         });
 
         this.element.addEventListener('dragleave', (e) => {
             if (!this.element.contains(e.relatedTarget)) {
-                this.element.style.backgroundColor = 'rgba(255,255,255,0.9)';
+                this.element.classList.remove('hover');
             }
         });
 
         this.element.addEventListener('drop', (e) => {
             e.preventDefault();
             e.stopPropagation();
-            this.element.style.backgroundColor = 'rgba(255,255,255,0.9)';
-            this.addTileToGroup(e);
+            this.element.classList.remove('hover');
+            this.handleTileDrop(e);
         });
 
         // 右クリック
         this.element.addEventListener('contextmenu', (e) => {
             if (e.target === this.element || e.target === this.header) {
                 e.preventDefault();
-                const action = confirm('グループ操作\n\nOK: 名前変更\nキャンセル: 削除');
-                if (action) {
-                    this.renameGroup();
-                } else {
-                    this.deleteGroup();
+                if (window.contextMenu) {
+                    window.contextMenu.showForGroup(e, this);
                 }
             }
         });
     }
 
-    // 新機能：1マス縮小表示
-    toggleCollapse() {
-        this.isCollapsed = !this.isCollapsed;
+    toggleExpansion() {
+        this.isExpanded = !this.isExpanded;
 
-        if (this.isCollapsed) {
-            // 1マス縮小
-            this.element.style.width = this.gridSize + 'px';
-            this.element.style.height = this.gridSize + 'px';
-            this.element.style.overflow = 'hidden';
-            this.header.style.fontSize = '10px';
-            this.header.textContent = this.tiles.length.toString();
-
-            // タイル非表示
-            this.tiles.forEach(tile => {
-                tile.element.style.display = 'none';
-            });
-        } else {
-            // 展開
-            this.element.style.width = this.pixelWidth + 'px';
-            this.element.style.height = this.pixelHeight + 'px';
-            this.element.style.overflow = 'visible';
-            this.header.style.fontSize = '12px';
-            this.header.textContent = this.name;
-
-            // タイル表示
+        if (this.isExpanded) {
+            this.element.classList.remove('collapsed');
+            this.element.style.height = this.size.height + 'px';
             this.tiles.forEach(tile => {
                 tile.element.style.display = 'flex';
             });
+        } else {
+            this.element.classList.add('collapsed');
+            this.element.style.height = this.gridSize + 'px';
+            this.tiles.forEach(tile => {
+                tile.element.style.display = 'none';
+            });
         }
 
-        console.log('[INFO] Group collapsed state:', this.isCollapsed);
+        console.log('[INFO] Group expansion toggled:', this.id, this.isExpanded);
     }
 
-    // グリッド制約移動
     startGridDrag(e) {
-        const startMouseX = e.clientX;
-        const startMouseY = e.clientY;
-        const startGridX = this.gridPosition.x;
-        const startGridY = this.gridPosition.y;
+        const startX = e.clientX;
+        const startY = e.clientY;
+        const startLeft = this.position.x;
+        const startTop = this.position.y;
 
         const handleMouseMove = (e) => {
-            const deltaX = e.clientX - startMouseX;
-            const deltaY = e.clientY - startMouseY;
+            const deltaX = e.clientX - startX;
+            const deltaY = e.clientY - startY;
 
-            const newGridX = startGridX + Math.round(deltaX / this.gridSize);
-            const newGridY = startGridY + Math.round(deltaY / this.gridSize);
-
-            // 境界チェック
-            if (newGridX >= 0 && newGridY >= 0) {
-                // 重なりチェック（後で実装）
-                this.moveToGrid(newGridX, newGridY);
+            // グリッド制約付き移動
+            if (window.gridManager) {
+                const newPosition = window.gridManager.snapToGrid(
+                    startLeft + deltaX,
+                    startTop + deltaY
+                );
+                this.position.x = newPosition.x;
+                this.position.y = newPosition.y;
+            } else {
+                this.position.x = startLeft + deltaX;
+                this.position.y = startTop + deltaY;
             }
+
+            this.element.style.left = this.position.x + 'px';
+            this.element.style.top = this.position.y + 'px';
         };
 
         const handleMouseUp = () => {
             document.removeEventListener('mousemove', handleMouseMove);
             document.removeEventListener('mouseup', handleMouseUp);
+
             if (window.linkCanvas) {
                 window.linkCanvas.saveData();
             }
@@ -201,37 +144,64 @@ class GroupArea {
         document.addEventListener('mouseup', handleMouseUp);
     }
 
-    moveToGrid(gridX, gridY) {
-        this.gridPosition.x = gridX;
-        this.gridPosition.y = gridY;
-        this.element.style.left = (gridX * this.gridSize) + 'px';
-        this.element.style.top = (gridY * this.gridSize) + 'px';
-    }
-
-    addTileToGroup(dropEvent) {
+    handleTileDrop(dropEvent) {
         if (!window.linkCanvas || !window.linkCanvas.dragState.draggedTile) return;
 
         const tile = window.linkCanvas.dragState.draggedTile;
-        if (tile.groupId === this.id) return;
+        if (tile.groupId === this.id) return; // 同じグループなら無視
+
+        console.log('[INFO] Adding tile to group:', tile.id, '→', this.id);
 
         // 既存グループから除外
         if (tile.groupId) {
             const oldGroup = window.linkCanvas.groups.get(tile.groupId);
-            if (oldGroup) oldGroup.removeTile(tile);
+            if (oldGroup) {
+                oldGroup.removeTile(tile);
+                if (oldGroup.tiles.length === 0) {
+                    oldGroup.element.remove();
+                    window.linkCanvas.groups.delete(oldGroup.id);
+                }
+            }
+        } else {
+            // 単独タイルの場合、キャンバスから削除
+            if (tile.element.parentNode === window.linkCanvas.canvas) {
+                window.linkCanvas.canvas.removeChild(tile.element);
+            }
         }
 
         // このグループに追加
         this.addTile(tile);
-        this.arrangeInternalTiles();
-        this.recalculateSize();
+        this.autoResize();
+
+        if (window.linkCanvas) {
+            window.linkCanvas.saveData();
+        }
     }
 
     addTile(tile) {
         tile.groupId = this.id;
         this.tiles.push(tile);
 
+        // グループ内での相対位置計算
+        const padding = 10;
+        const tileSize = this.gridSize - 5;
+        const tilesPerRow = Math.floor((this.size.width - padding * 2) / tileSize);
+        const row = Math.floor((this.tiles.length - 1) / tilesPerRow);
+        const col = (this.tiles.length - 1) % tilesPerRow;
+
+        const relativeX = padding + col * tileSize;
+        const relativeY = 35 + row * tileSize; // ヘッダー分を考慮
+
         // DOM移動
         this.element.appendChild(tile.element);
+        tile.element.style.position = 'absolute';
+        tile.element.style.left = relativeX + 'px';
+        tile.element.style.top = relativeY + 'px';
+        tile.element.style.width = (tileSize - 5) + 'px';
+        tile.element.style.height = (tileSize - 5) + 'px';
+
+        tile.relativePosition = { x: relativeX, y: relativeY };
+
         console.log('[INFO] Tile added to group:', tile.id);
     }
 
@@ -240,65 +210,78 @@ class GroupArea {
         if (index > -1) {
             this.tiles.splice(index, 1);
             tile.groupId = null;
+            delete tile.relativePosition;
+
+            // 残りのタイルを再配置
+            this.rearrangeTiles();
         }
     }
 
-    // グループ内タイル自動配置
-    arrangeInternalTiles() {
-        const headerHeight = 34; // ヘッダー + マージン
-        const tileSize = this.gridSize - 10; // マージン考慮
-        const tilesPerRow = Math.floor((this.pixelWidth - 10) / tileSize);
+    rearrangeTiles() {
+        const padding = 10;
+        const tileSize = this.gridSize - 5;
+        const tilesPerRow = Math.floor((this.size.width - padding * 2) / tileSize);
 
         this.tiles.forEach((tile, index) => {
             const row = Math.floor(index / tilesPerRow);
             const col = index % tilesPerRow;
 
-            tile.element.style.position = 'absolute';
-            tile.element.style.left = (5 + col * tileSize) + 'px';
-            tile.element.style.top = (headerHeight + row * tileSize) + 'px';
-            tile.element.style.width = (tileSize - 5) + 'px';
-            tile.element.style.height = (tileSize - 5) + 'px';
+            const relativeX = padding + col * tileSize;
+            const relativeY = 35 + row * tileSize;
+
+            tile.element.style.left = relativeX + 'px';
+            tile.element.style.top = relativeY + 'px';
+            tile.relativePosition = { x: relativeX, y: relativeY };
         });
     }
 
-    recalculateSize() {
-        this.calculateGridSize(this.tiles.length);
-        if (!this.isCollapsed) {
-            this.element.style.width = this.pixelWidth + 'px';
-            this.element.style.height = this.pixelHeight + 'px';
+    autoResize() {
+        const padding = 20;
+        const tileSize = this.gridSize - 5;
+        const tilesPerRow = Math.floor((this.size.width - padding) / tileSize) || 1;
+        const rows = Math.ceil(this.tiles.length / tilesPerRow);
+
+        // 最小サイズとタイル数に基づくサイズ
+        const minWidth = Math.max(120, tilesPerRow * tileSize + padding);
+        const minHeight = Math.max(100, 60 + rows * tileSize);
+
+        this.size.width = minWidth;
+        this.size.height = minHeight;
+
+        if (this.isExpanded) {
+            this.element.style.width = this.size.width + 'px';
+            this.element.style.height = this.size.height + 'px';
         }
-        this.arrangeInternalTiles();
+
+        this.rearrangeTiles();
     }
 
-    renameGroup() {
-        const newName = prompt('グループ名:', this.name);
-        if (newName && newName.trim()) {
-            this.name = newName.trim();
-            if (!this.isCollapsed) {
-                this.header.textContent = this.name;
-            }
-        }
+    setName(newName) {
+        this.name = newName;
+        this.header.textContent = this.name;
     }
 
-    deleteGroup() {
-        if (!confirm('グループを削除しますか？')) return;
+    disbandGroup() {
+        if (!confirm('グループを解除しますか？（タイルは個別配置に戻ります）')) return;
 
         // タイルを個別配置に戻す
         this.tiles.forEach(tile => {
             tile.groupId = null;
-            if (window.linkCanvas) {
-                // 空いている場所を探して配置
+
+            if (window.linkCanvas && window.gridManager) {
                 const freePosition = window.gridManager.findNearestFreePosition(
-                    this.gridPosition.x * this.gridSize,
-                    this.gridPosition.y * this.gridSize
+                    this.position.x, this.position.y, [this.element]
                 );
                 tile.position = freePosition;
+                tile.element.style.position = 'absolute';
                 tile.element.style.left = freePosition.x + 'px';
                 tile.element.style.top = freePosition.y + 'px';
                 tile.element.style.width = this.gridSize + 'px';
                 tile.element.style.height = this.gridSize + 'px';
                 window.linkCanvas.canvas.appendChild(tile.element);
             }
+
+            delete tile.relativePosition;
         });
 
         // グループ削除
@@ -306,7 +289,20 @@ class GroupArea {
             window.linkCanvas.groups.delete(this.id);
             window.linkCanvas.saveData();
         }
+
         this.element.remove();
+        console.log('[INFO] Group disbanded:', this.id);
+    }
+
+    toJSON() {
+        return {
+            id: this.id,
+            color: this.color,
+            name: this.name,
+            position: this.position,
+            size: this.size,
+            isExpanded: this.isExpanded,
+            tileIds: this.tiles.map(tile => tile.id)
+        };
     }
 }
-  

@@ -2,13 +2,13 @@
   "manifest_version": 3,
   "name": "Link Canvas",
   "version": "1.0.0",
-  "description": "自由自在にリンクを配置できる新しいタブページ",
+  "description": "Androidホーム画面風のリンク整理システム",
 
   "chrome_url_overrides": {
     "newtab": "newtab.html"
   },
 
-  "permissions": ["storage", "tabs", "bookmarks", "favicon", "activeTab"],
+  "permissions": ["storage", "tabs", "bookmarks", "favicon"],
 
   "host_permissions": ["http://*/*", "https://*/*"],
 
@@ -16,9 +16,5 @@
     "16": "assets/icons/icon16.png",
     "48": "assets/icons/icon48.png",
     "128": "assets/icons/icon128.png"
-  },
-
-  "content_security_policy": {
-    "extension_pages": "script-src 'self'; object-src 'self'"
   }
 }

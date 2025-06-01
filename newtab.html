@@ -9,44 +9,36 @@
   <link rel="stylesheet" href="css/animations.css">
 </head>
 <body>
-  <div id="link-canvas" class="canvas-container">
-    <!-- リンクタイルとグループがここに動的に追加される -->
+  <div id="link-canvas" class="canvas-container"></div>
+
+  <!-- 右クリックメニュー -->
+  <div id="context-menu" class="context-menu hidden">
+    <div class="context-item" data-action="rename">名前を変更</div>
+    <div class="context-item" data-action="ungroup">グループ化解除</div>
+    <div class="context-item" data-action="open-all">すべて開く</div>
+    <div class="context-item" data-action="delete-all">すべて削除</div>
   </div>
 
-  <!-- 右クリックコンテキストメニュー -->
-<!-- この部分を一時的にコメントアウト -->
-<!--
-<div id="context-menu" class="context-menu hidden">
-  <div class="context-item" data-action="rename">名前を変更</div>
-  <div class="context-item" data-action="ungroup">グループ化解除</div>
-  <div class="context-item" data-action="open-all">すべて開く</div>
-  <div class="context-item" data-action="delete-all">すべて削除</div>
-</div>
--->
-
-  <!-- 設定パネル（右上のギア）-->
-  <div id="settings-toggle" class="settings-button" title="設定">⚙️</div>
+  <!-- 設定ボタン -->
+  <div id="settings-toggle" class="settings-button">⚙️</div>
   <div id="settings-panel" class="settings-panel hidden">
     <h3>設定</h3>
-    </div>
     <div class="setting-item">
-      <button id="import-bookmarks">ブックマークをインポート</button>
+      <button id="import-bookmarks">ブックマークインポート</button>
     </div>
     <div class="setting-item">
       <button id="clear-all-data">すべてクリア</button>
     </div>
   </div>
 
-  <!-- スクリプト読み込み -->
-  <script src="js/utils/Logger.js"></script>
+  <!-- JavaScript読み込み -->
   <script src="js/utils/ColorManager.js"></script>
   <script src="js/utils/NameGenerator.js"></script>
   <script src="js/core/GridManager.js"></script>
   <script src="js/core/StorageManager.js"></script>
-<!-- スクリプト読み込みからも削除 -->
-<!-- <script src="js/components/ContextMenu.js"></script> -->
-  <script src="js/features/AutoGrouping.js"></script>
+  <script src="js/components/ContextMenu.js"></script>
   <script src="js/components/GroupArea.js"></script>
+  <script src="js/features/AutoGrouping.js"></script>
   <script src="js/core/LinkCanvas.js"></script>
   <script src="js/main.js"></script>
 </body>

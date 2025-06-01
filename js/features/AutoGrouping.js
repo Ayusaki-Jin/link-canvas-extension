@@ -1,8 +1,6 @@
 class AutoGrouping {
     constructor(linkCanvas) {
         this.canvas = linkCanvas;
-        this.colorManager = new ColorManager();
-        this.nameGenerator = new NameGenerator();
         this.HOVER_DELAY = 800; // 0.8秒
         this.hoverTimer = null;
         this.hoverIndicator = null;
@@ -33,127 +31,107 @@ class AutoGrouping {
             clearTimeout(this.hoverTimer);
             this.hoverTimer = null;
             this.hideHoverProgress();
-            console.log('[INFO] Hover timer cleared');
         }
     }
-    
+
     createAutoGroup(tile1, tile2) {
         console.log('[INFO] Creating auto-group');
 
+        // 安全チェック
+        if (!tile1 || !tile2 || tile1.id === tile2.id) {
+            return null;
+        }
+
+        if (tile1.groupId || tile2.groupId) {
+            console.log('[INFO] One tile already in group, skipping');
+            return null;
+        }
+
         // グループ設定
-        const color = this.canvas.colorManager.getNextColor();
+        const colorData = this.canvas.colorManager.getNextColor();
         const name = this.canvas.nameGenerator.generateGroupName();
         const groupId = this.generateGroupId();
 
-        // グリッド位置計算（新方式）
-        const gridPosition = {
-            x: Math.min(
-                Math.floor(tile1.position.x / this.canvas.gridSize),
-                Math.floor(tile2.position.x / this.canvas.gridSize)
-            ),
-            y: Math.min(
-                Math.floor(tile1.position.y / this.canvas.gridSize),
-                Math.floor(tile2.position.y / this.canvas.gridSize)
-            )
+        // グリッド位置計算
+        const position = {
+            x: Math.min(tile1.position.x, tile2.position.x),
+            y: Math.min(tile1.position.y, tile2.position.y)
         };
 
-        // 新しいGroupArea作成（引数変更）
-        const groupArea = new GroupArea(groupId, color, name, gridPosition, 2);
+        // グリッドに合わせてスナップ
+        const snappedPosition = this.canvas.snapToGrid(position.x, position.y);
 
-        // タイルをグループに移動
-        this.moveToGroup(tile1, groupArea);
-        this.moveToGroup(tile2, groupArea);
+        // グループサイズ計算
+        const size = { width: 120, height: 100 };
 
-        // 内部タイル配置
-        groupArea.arrangeInternalTiles();
+        console.log('[INFO] Creating group at position:', snappedPosition);
 
-        // キャンバスに登録
-        this.canvas.groups.set(groupId, groupArea);
-        this.canvas.canvas.appendChild(groupArea.element);
+        try {
+            // グループエリア作成
+            const groupArea = new GroupArea(groupId, colorData, name, snappedPosition, size);
 
-        // データ保存
-        this.canvas.saveData();
+            // タイルをキャンバスから削除
+            if (tile1.element.parentNode) {
+                tile1.element.parentNode.removeChild(tile1.element);
+            }
+            if (tile2.element.parentNode) {
+                tile2.element.parentNode.removeChild(tile2.element);
+            }
 
-        console.log('[INFO] Auto-group created with new system:', groupId);
-        return groupArea;
-    }
+            // タイルをグループに追加
+            groupArea.addTile(tile1);
+            groupArea.addTile(tile2);
 
-    // moveToGroup メソッドも修正
-    moveToGroup(tile, groupArea) {
-        // 既存の位置から削除
-        if (tile.element.parentNode) {
-            tile.element.parentNode.removeChild(tile.element);
+            // グループサイズ調整
+            groupArea.autoResize();
+
+            // キャンバスに登録
+            this.canvas.groups.set(groupId, groupArea);
+            this.canvas.canvas.appendChild(groupArea.element);
+
+            // アニメーション
+            groupArea.element.classList.add('group-forming');
+            setTimeout(() => {
+                groupArea.element.classList.remove('group-forming');
+            }, 500);
+
+            // データ保存
+            this.canvas.saveData();
+
+            console.log('[INFO] Auto-group created successfully:', groupId);
+            return groupArea;
+
+        } catch (error) {
+            console.log('[ERROR] Failed to create group:', error);
+            return null;
         }
-
-        // グループに追加
-        groupArea.addTile(tile);
-
-        console.log('[INFO] Tile moved to group:', tile.id);
-    }
-    
-
-    calculateGroupPosition(tile1, tile2) {
-        const centerX = (tile1.position.x + tile2.position.x) / 2;
-        const centerY = (tile1.position.y + tile2.position.y) / 2;
-
-        // グリッドにスナップ
-        return this.canvas.snapToGrid(centerX, centerY);
-    }
-
-    calculateInitialGroupSize() {
-        const minWidth = this.canvas.gridSize * 3; // 3グリッド分
-        const minHeight = this.canvas.gridSize * 2; // 2グリッド分
-
-        return {
-            width: minWidth,
-            height: minHeight
-        };
-    }
-
-    addTileToGroup(tile, groupArea) {
-        // タイルの現在位置からグループ内相対位置を計算
-        const relativePosition = {
-            x: tile.position.x - groupArea.position.x + 10, // 10px余白
-            y: tile.position.y - groupArea.position.y + 35  // ヘッダー分を考慮
-        };
-
-        // タイルをグループに関連付け
-        tile.groupId = groupArea.id;
-        tile.relativePosition = relativePosition;
-
-        // DOM要素をグループ内に移動
-        groupArea.element.appendChild(tile.element);
-        tile.element.style.left = relativePosition.x + 'px';
-        tile.element.style.top = relativePosition.y + 'px';
-
-        // グループにタイル追加
-        groupArea.addTile(tile);
-
-        console.log('[INFO] Tile added to group:', tile.id, '→', groupArea.id);
     }
 
     showHoverProgress(targetTile) {
-        const indicator = this.hoverIndicator;
+        if (!this.hoverIndicator) return;
+
         const rect = targetTile.element.getBoundingClientRect();
 
-        indicator.style.left = (rect.left - 5) + 'px';
-        indicator.style.top = (rect.top - 5) + 'px';
-        indicator.style.width = (rect.width + 10) + 'px';
-        indicator.style.height = (rect.height + 10) + 'px';
-        indicator.style.display = 'block';
+        this.hoverIndicator.style.left = (rect.left - 5) + 'px';
+        this.hoverIndicator.style.top = (rect.top - 5) + 'px';
+        this.hoverIndicator.style.width = (rect.width + 10) + 'px';
+        this.hoverIndicator.style.height = (rect.height + 10) + 'px';
+        this.hoverIndicator.style.display = 'block';
 
         // プログレスアニメーション開始
-        indicator.style.animation = `hoverProgress ${this.HOVER_DELAY}ms linear`;
+        this.hoverIndicator.classList.add('hover-indicator');
     }
 
     hideHoverProgress() {
-        this.hoverIndicator.style.display = 'none';
-        this.hoverIndicator.style.animation = 'none';
+        if (this.hoverIndicator) {
+            this.hoverIndicator.style.display = 'none';
+            this.hoverIndicator.classList.remove('hover-indicator');
+        }
     }
 
     createHoverIndicator() {
         this.hoverIndicator = document.createElement('div');
-        this.hoverIndicator.className = 'hover-indicator';
+        this.hoverIndicator.id = 'hover-indicator';
         this.hoverIndicator.style.position = 'fixed';
         this.hoverIndicator.style.border = '3px solid #007acc';
         this.hoverIndicator.style.borderRadius = '8px';
@@ -163,100 +141,9 @@ class AutoGrouping {
         this.hoverIndicator.style.zIndex = '999';
 
         document.body.appendChild(this.hoverIndicator);
-
-        // CSS アニメーション定義
-        const style = document.createElement('style');
-        style.textContent = `
-        @keyframes hoverProgress {
-          0% { border-color: #007acc; background: rgba(0, 122, 204, 0.1); }
-          50% { border-color: #28a745; background: rgba(40, 167, 69, 0.2); }
-          100% { border-color: #28a745; background: rgba(40, 167, 69, 0.3); }
-        }
-      `;
-        document.head.appendChild(style);
     }
 
     generateGroupId() {
         return 'group_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
     }
-
-    // グループ解除機能
-    ungroupTiles(groupArea) {
-        console.log('[INFO] Ungrouping tiles from:', groupArea.id);
-
-        const tiles = [...groupArea.tiles];
-
-        tiles.forEach(tile => {
-            // タイルを個別配置に戻す
-            tile.groupId = null;
-
-            // 絶対位置に変換
-            const absolutePosition = {
-                x: groupArea.position.x + tile.relativePosition.x,
-                y: groupArea.position.y + tile.relativePosition.y
-            };
-            tile.position = this.canvas.snapToGrid(absolutePosition.x, absolutePosition.y);
-
-            // DOM要素をキャンバスに戻す
-            this.canvas.canvas.appendChild(tile.element);
-            tile.element.style.left = tile.position.x + 'px';
-            tile.element.style.top = tile.position.y + 'px';
-
-            delete tile.relativePosition;
-        });
-
-        // グループエリア削除
-        groupArea.element.remove();
-        this.canvas.groups.delete(groupArea.id);
-
-        // データ保存
-        this.canvas.saveData();
-
-        console.log('[INFO] Group ungrouped:', groupArea.id);
-    }
-
-    // 手動グループ作成（設定画面等から）
-    createManualGroup(selectedTiles, color = null, name = null) {
-        if (selectedTiles.length < 2) {
-            console.log('[ERROR] Need at least 2 tiles to create group');
-            return null;
-        }
-
-        const groupColor = color || this.colorManager.getNextColor();
-        const groupName = name || this.nameGenerator.generateGroupName();
-
-        const firstTile = selectedTiles[0];
-        const groupPosition = { ...firstTile.position };
-        const groupSize = this.calculateGroupSizeForTiles(selectedTiles);
-
-        const groupId = this.generateGroupId();
-        const groupArea = new GroupArea(groupId, groupColor, groupName, groupPosition, groupSize);
-
-        selectedTiles.forEach(tile => {
-            this.addTileToGroup(tile, groupArea);
-        });
-
-        this.canvas.groups.set(groupId, groupArea);
-        this.canvas.canvas.appendChild(groupArea.element);
-        this.canvas.saveData();
-
-        return groupArea;
-    }
-
-    calculateGroupSizeForTiles(tiles) {
-        let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-
-        tiles.forEach(tile => {
-            minX = Math.min(minX, tile.position.x);
-            minY = Math.min(minY, tile.position.y);
-            maxX = Math.max(maxX, tile.position.x + this.canvas.gridSize);
-            maxY = Math.max(maxY, tile.position.y + this.canvas.gridSize);
-        });
-
-        return {
-            width: Math.max(maxX - minX + 40, this.canvas.gridSize * 3),
-            height: Math.max(maxY - minY + 70, this.canvas.gridSize * 2)
-        };
-    }
 }
-  

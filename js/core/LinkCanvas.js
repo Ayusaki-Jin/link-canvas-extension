@@ -1,54 +1,35 @@
 class LinkCanvas {
     constructor() {
         this.canvas = document.getElementById('link-canvas');
-        this.gridSize = 50; // デフォルト50px
+        this.gridSize = 50;
         this.tiles = new Map();
         this.groups = new Map();
-
-        // 依存関係用のプロパティを追加
-        this.gridManager = null;
-        this.storageManager = null;
-        this.autoGrouping = null;
-        this.colorManager = null;
-        this.nameGenerator = null;
-
         this.dragState = {
             isDragging: false,
             draggedTile: null,
-            startPosition: null,
-            hoverTimer: null
+            startPosition: null
         };
+        this.dependencies = {};
 
         this.init();
     }
 
-    // ← この メソッドを追加
+    async init() {
+        console.log('[INIT] LinkCanvas initializing');
+
+        this.setupCanvas();
+        this.setupDragAndDrop();
+        this.setupKeyboardEvents();
+
+        console.log('[INFO] LinkCanvas initialization complete');
+    }
+
     setDependencies(gridManager, storageManager, autoGrouping, colorManager, nameGenerator) {
         this.gridManager = gridManager;
         this.storageManager = storageManager;
         this.autoGrouping = autoGrouping;
         this.colorManager = colorManager;
         this.nameGenerator = nameGenerator;
-
-        console.log('[INFO] Dependencies injected successfully');
-    }
-
-    async init() {
-        console.log('[INIT] LinkCanvas initializing');
-
-        // キャンバスの設定
-        this.setupCanvas();
-
-        // ドラッグ&ドロップの設定
-        this.setupDragAndDrop();
-
-        // 保存データの読み込み
-        await this.loadSavedData();
-
-        // キーボードイベント
-        this.setupKeyboardEvents();
-
-        console.log('[INFO] LinkCanvas initialization complete');
     }
 
     setupCanvas() {
@@ -56,14 +37,9 @@ class LinkCanvas {
         this.canvas.style.width = '100vw';
         this.canvas.style.height = '100vh';
         this.canvas.style.overflow = 'hidden';
-        this.canvas.style.backgroundColor = '#f5f5f5';
-
-        // グリッド表示（開発時のみ）
-        this.showGridLines();
     }
 
     setupDragAndDrop() {
-        // 外部からのドロップを受け入れ
         this.canvas.addEventListener('dragover', (e) => {
             e.preventDefault();
             this.handleDragOver(e);
@@ -74,15 +50,21 @@ class LinkCanvas {
             this.handleDrop(e);
         });
 
-        // キャンバス全体でのドラッグ終了
         this.canvas.addEventListener('dragend', () => {
             this.clearDragState();
         });
 
-        // ブックマークバーからのドラッグ検知
         document.addEventListener('dragstart', (e) => {
             if (e.target.tagName === 'A') {
                 console.log('[SCAN] Drag detected from bookmark');
+            }
+        });
+    }
+
+    setupKeyboardEvents() {
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Delete' && this.selectedTiles && this.selectedTiles.length > 0) {
+                this.deleteSelectedTiles();
             }
         });
     }
@@ -92,13 +74,17 @@ class LinkCanvas {
 
         // ホバー中のタイル検知
         const hoveredTile = this.getTileAt(position.x, position.y);
-        if (hoveredTile && this.dragState.draggedTile && hoveredTile !== this.dragState.draggedTile) {
-            this.startHoverTimer(hoveredTile);
+        if (hoveredTile && this.dragState.draggedTile &&
+            hoveredTile !== this.dragState.draggedTile) {
+            if (this.autoGrouping) {
+                this.autoGrouping.startHoverTimer(this.dragState.draggedTile, hoveredTile);
+            }
         } else {
-            this.clearHoverTimer();
+            if (this.autoGrouping) {
+                this.autoGrouping.clearHoverTimer();
+            }
         }
 
-        // ドロップ位置のプレビュー表示
         this.showDropPreview(position);
     }
 
@@ -106,28 +92,28 @@ class LinkCanvas {
         const position = this.snapToGrid(e.clientX, e.clientY);
 
         if (this.dragState.draggedTile) {
-            // 既存タイル移動（重複防止）
+            // 既存タイルの移動
             const tile = this.dragState.draggedTile;
 
-            // 移動処理
             if (tile.groupId) {
+                // グループ内タイルの移動は特別処理
                 this.moveGroupTile(tile, position);
             } else {
+                // 単独タイルの移動
                 tile.position = position;
                 tile.element.style.left = position.x + 'px';
                 tile.element.style.top = position.y + 'px';
             }
 
-            // 見た目を元に戻す
-            tile.element.style.opacity = '1';
-            tile.element.classList.remove('dragging');
-
             console.log('[INFO] Tile moved to:', position);
         } else {
-            // 新規作成の場合のみURL取得
-            const url = e.dataTransfer.getData('text/uri-list') || e.dataTransfer.getData('text/plain');
+            // 新規タイル作成
+            const url = e.dataTransfer.getData('text/uri-list') ||
+                e.dataTransfer.getData('text/plain');
+            const title = e.dataTransfer.getData('text/html') || 'New Link';
+
             if (url && url.startsWith('http')) {
-                this.createLinkTile(url, 'New Link', position);
+                this.createLinkTile(url, this.extractTitle(title), position);
                 console.log('[INFO] New tile created');
             }
         }
@@ -137,29 +123,42 @@ class LinkCanvas {
         this.saveData();
     }
 
-    startHoverTimer(targetTile) {
-        if (this.dragState.hoverTimer) {
-            clearTimeout(this.dragState.hoverTimer);
-        }
+    moveGroupTile(tile, newPosition) {
+        const groupArea = this.groups.get(tile.groupId);
+        if (!groupArea) return;
 
-        this.dragState.hoverTimer = setTimeout(() => {
-            this.createAutoGroup(this.dragState.draggedTile, targetTile);
-            console.log('[INFO] Auto-group created');
-        }, 800); // 0.8秒
-    }
+        // グループから除外して単独タイルにする
+        groupArea.removeTile(tile);
+        tile.groupId = null;
 
-    clearHoverTimer() {
-        if (this.dragState.hoverTimer) {
-            clearTimeout(this.dragState.hoverTimer);
-            this.dragState.hoverTimer = null;
+        // キャンバスに移動
+        this.canvas.appendChild(tile.element);
+        tile.position = newPosition;
+        tile.element.style.left = newPosition.x + 'px';
+        tile.element.style.top = newPosition.y + 'px';
+        tile.element.style.width = this.gridSize + 'px';
+        tile.element.style.height = this.gridSize + 'px';
+
+        delete tile.relativePosition;
+
+        // グループが空になったら削除
+        if (groupArea.tiles.length === 0) {
+            groupArea.element.remove();
+            this.groups.delete(groupArea.id);
         }
     }
 
     snapToGrid(x, y) {
-        return {
-            x: Math.round(x / this.gridSize) * this.gridSize,
-            y: Math.round(y / this.gridSize) * this.gridSize
-        };
+        return this.gridManager ? this.gridManager.snapToGrid(x, y) : { x, y };
+    }
+
+    getTileAt(x, y) {
+        for (const tile of this.tiles.values()) {
+            if (tile.position.x === x && tile.position.y === y && !tile.groupId) {
+                return tile;
+            }
+        }
+        return null;
     }
 
     createLinkTile(url, title, position) {
@@ -167,20 +166,23 @@ class LinkCanvas {
         const tile = {
             id: tileId,
             url: url,
-            title: this.extractTitle(title),
+            title: title,
             position: position,
             groupId: null,
             element: null
         };
 
-        // DOM要素作成
         tile.element = this.createTileElement(tile);
         this.canvas.appendChild(tile.element);
-
-        // データ保存
         this.tiles.set(tileId, tile);
-        this.saveData();
 
+        // アニメーション
+        tile.element.classList.add('tile-adding');
+        setTimeout(() => {
+            tile.element.classList.remove('tile-adding');
+        }, 300);
+
+        this.saveData();
         return tile;
     }
 
@@ -192,48 +194,31 @@ class LinkCanvas {
         element.style.top = tile.position.y + 'px';
         element.style.width = this.gridSize + 'px';
         element.style.height = this.gridSize + 'px';
-        element.style.border = '1px solid #ddd';
-        element.style.borderRadius = '4px';
-        element.style.backgroundColor = '#fff';
-        element.style.cursor = 'pointer';
-        element.style.display = 'flex';
-        element.style.flexDirection = 'column';
-        element.style.alignItems = 'center';
-        element.style.justifyContent = 'center';
-        element.style.padding = '4px';
-        element.style.boxSizing = 'border-box';
 
-        // ファビコン（ドラッグ無効化）
+        // ファビコン
         const favicon = document.createElement('img');
+        favicon.className = 'favicon';
         favicon.src = `https://www.google.com/s2/favicons?domain=${new URL(tile.url).hostname}`;
-        favicon.style.width = '16px';
-        favicon.style.height = '16px';
-        favicon.style.marginBottom = '4px';
-        favicon.draggable = false; // ← 追加：画像ドラッグを無効化
-        favicon.style.pointerEvents = 'none'; // ← 追加：クリックイベントも無効化
+        favicon.draggable = false;
+        favicon.style.pointerEvents = 'none';
 
         // タイトル
         const titleEl = document.createElement('div');
+        titleEl.className = 'title';
         titleEl.textContent = tile.title;
-        titleEl.style.fontSize = '10px';
-        titleEl.style.textAlign = 'center';
-        titleEl.style.overflow = 'hidden';
-        titleEl.style.lineHeight = '1.2';
-        titleEl.style.userSelect = 'none'; // ← 追加：テキスト選択無効化
+        titleEl.style.userSelect = 'none';
 
         element.appendChild(favicon);
         element.appendChild(titleEl);
 
-        // イベント設定
         this.setupTileEvents(element, tile);
-
         return element;
     }
 
     setupTileEvents(element, tile) {
         // クリックでページ開く
         element.addEventListener('click', (e) => {
-            if (!e.ctrlKey && !e.shiftKey && !e.metaKey) {
+            if (!this.dragState.isDragging) {
                 window.open(tile.url, '_blank');
             }
         });
@@ -246,214 +231,136 @@ class LinkCanvas {
             this.dragState.startPosition = { ...tile.position };
 
             e.dataTransfer.effectAllowed = 'move';
-            e.dataTransfer.setData('text/plain', ''); // 空文字で上書き
+            e.dataTransfer.setData('text/plain', '');
 
-            element.style.opacity = '0.5';
             element.classList.add('dragging');
-
             console.log('[SCAN] Tile drag started');
         });
 
         element.addEventListener('dragend', (e) => {
-            element.style.opacity = '1';
             element.classList.remove('dragging');
             this.clearDragState();
         });
 
-        // 右クリック - シンプル実装（確実に動作）
+        // 右クリック
         element.addEventListener('contextmenu', (e) => {
             e.preventDefault();
             e.stopPropagation();
 
-            console.log('[INFO] Right click detected on tile:', tile.id);
-
-            const action = confirm('タイル操作\n\nOK: タイトル変更\nキャンセル: タイル削除');
-
-            if (action) {
-                // タイトル変更
-                const newTitle = prompt('新しいタイトル:', tile.title);
-                if (newTitle !== null && newTitle.trim()) {
-                    tile.title = newTitle.trim();
-                    const titleElement = element.querySelector('div:last-child');
-                    if (titleElement) {
-                        titleElement.textContent = tile.title;
-                    }
-                    this.saveData();
-                    console.log('[INFO] Tile title changed:', tile.id);
-                }
-            } else {
-                // タイル削除
-                if (confirm('このタイルを削除しますか？')) {
-                    this.deleteTile(tile);
-                }
+            if (window.contextMenu) {
+                window.contextMenu.showForTile(e, tile);
             }
         });
-
-        
     }
 
-    // deleteTile メソッドも追加（まだない場合）
-    deleteTile(tile) {
-        // グループ内タイルの場合
-        if (tile.groupId) {
-            const groupArea = this.groups.get(tile.groupId);
-            if (groupArea) {
-                groupArea.removeTile(tile);
-                if (groupArea.tiles.length === 0) {
-                    groupArea.element.remove();
-                    this.groups.delete(groupArea.id);
-                }
-            }
+    showDropPreview(position) {
+        let preview = document.getElementById('drop-preview');
+        if (!preview) {
+            preview = document.createElement('div');
+            preview.id = 'drop-preview';
+            preview.className = 'drop-preview';
+            this.canvas.appendChild(preview);
         }
 
-        // タイル削除
-        if (tile.element && tile.element.parentNode) {
-            tile.element.parentNode.removeChild(tile.element);
-        }
-        this.tiles.delete(tile.id);
-        this.saveData();
-
-        console.log('[INFO] Tile deleted:', tile.id);
+        preview.style.left = position.x + 'px';
+        preview.style.top = position.y + 'px';
+        preview.style.display = 'block';
     }
-    
-getTileAt(x, y) {
-    for (const tile of this.tiles.values()) {
-        if (tile.position.x === x && tile.position.y === y) {
-            return tile;
+
+    hideDropPreview() {
+        const preview = document.getElementById('drop-preview');
+        if (preview) {
+            preview.style.display = 'none';
         }
     }
-    return null;
-}
 
-showDropPreview(position) {
-    let preview = document.getElementById('drop-preview');
-    if (!preview) {
-        preview = document.createElement('div');
-        preview.id = 'drop-preview';
-        preview.style.position = 'absolute';
-        preview.style.border = '2px dashed #007acc';
-        preview.style.backgroundColor = 'rgba(0, 122, 204, 0.1)';
-        preview.style.width = this.gridSize + 'px';
-        preview.style.height = this.gridSize + 'px';
-        preview.style.pointerEvents = 'none';
-        this.canvas.appendChild(preview);
+    clearDragState() {
+        this.dragState.isDragging = false;
+        this.dragState.draggedTile = null;
+        this.dragState.startPosition = null;
+        if (this.autoGrouping) {
+            this.autoGrouping.clearHoverTimer();
+        }
     }
 
-    preview.style.left = position.x + 'px';
-    preview.style.top = position.y + 'px';
-    preview.style.display = 'block';
-}
-
-hideDropPreview() {
-    const preview = document.getElementById('drop-preview');
-    if (preview) {
-        preview.style.display = 'none';
+    extractTitle(titleData) {
+        if (typeof titleData === 'string' && titleData.includes('<')) {
+            const tempDiv = document.createElement('div');
+            tempDiv.innerHTML = titleData;
+            return tempDiv.textContent || tempDiv.innerText || 'New Link';
+        }
+        return titleData || 'New Link';
     }
-}
 
-showGridLines() {
-    const gridOverlay = document.createElement('div');
-    gridOverlay.style.position = 'absolute';
-    gridOverlay.style.top = '0';
-    gridOverlay.style.left = '0';
-    gridOverlay.style.width = '100%';
-    gridOverlay.style.height = '100%';
-    gridOverlay.style.pointerEvents = 'none';
-    gridOverlay.style.opacity = '0.1';
-    gridOverlay.style.backgroundImage = `
-        linear-gradient(to right, #000 1px, transparent 1px),
-        linear-gradient(to bottom, #000 1px, transparent 1px)
-      `;
-    gridOverlay.style.backgroundSize = `${this.gridSize}px ${this.gridSize}px`;
-
-    this.canvas.appendChild(gridOverlay);
-}
-
-clearDragState() {
-    this.dragState.isDragging = false;
-    this.dragState.draggedTile = null;
-    this.dragState.startPosition = null;
-    this.clearHoverTimer();
-}
-
-extractTitle(titleData) {
-    // HTMLからテキストを抽出
-    const tempDiv = document.createElement('div');
-    tempDiv.innerHTML = titleData;
-    return tempDiv.textContent || tempDiv.innerText || 'New Link';
-}
-
-generateId() {
-    return 'tile_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
-}
+    generateId() {
+        return 'tile_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+    }
 
     async saveData() {
-    const data = {
-        tiles: Array.from(this.tiles.entries()),
-        groups: Array.from(this.groups.entries()),
-        settings: { gridSize: this.gridSize }
-    };
-
-    try {
-        await chrome.storage.sync.set({ linkCanvasData: data });
-        console.log('[INFO] Data saved successfully');
-    } catch (error) {
-        console.log('[ERROR] Failed to save data:', error);
+        if (this.storageManager) {
+            return await this.storageManager.saveData(this.tiles, this.groups, {
+                gridSize: this.gridSize
+            });
+        }
+        return false;
     }
-}
 
-    async loadSavedData() {
-        try {
-            const result = await chrome.storage.sync.get('linkCanvasData');
-            if (result.linkCanvasData) {
-                const data = result.linkCanvasData;
+    async loadFromData(data) {
+        if (!data || !data.tiles || !data.groups) return;
 
-                console.log('[INFO] Loading data format:', Object.keys(data));
+        this.clearAll();
 
-                // データ形式チェック
-                if (data.tiles && Array.isArray(data.tiles)) {
-                    // 新形式
-                    for (const tileData of data.tiles) {
-                        const tile = { ...tileData };
-                        tile.element = this.createTileElement(tile);
-                        this.canvas.appendChild(tile.element);
-                        this.tiles.set(tile.id, tile);
-                    }
-                } else if (data.tiles && data.tiles.length) {
-                    // 古い形式への対応
-                    for (const [id, tileData] of data.tiles) {
-                        const tile = { ...tileData };
-                        tile.element = this.createTileElement(tile);
-                        this.canvas.appendChild(tile.element);
-                        this.tiles.set(id, tile);
-                    }
-                }
+        // タイル復元
+        for (const tileData of data.tiles) {
+            const tile = { ...tileData };
+            tile.element = this.createTileElement(tile);
+            this.tiles.set(tile.id, tile);
 
-                // 設定復元
-                if (data.settings) {
-                    this.gridSize = data.settings.gridSize || 50;
-                }
-
-                console.log('[INFO] Data loaded successfully');
+            if (!tile.groupId) {
+                this.canvas.appendChild(tile.element);
             }
-        } catch (error) {
-            console.log('[ERROR] Failed to load data:', error);
-            // エラー時は古いデータをクリア
-            await chrome.storage.sync.clear();
-            console.log('[INFO] Cleared corrupted data');
+        }
+
+        // グループ復元
+        for (const groupData of data.groups) {
+            const groupArea = new GroupArea(
+                groupData.id,
+                groupData.color,
+                groupData.name,
+                groupData.position,
+                groupData.size
+            );
+
+            groupArea.isExpanded = groupData.isExpanded;
+
+            // グループ内タイルを関連付け
+            for (const tileId of groupData.tileIds) {
+                const tile = this.tiles.get(tileId);
+                if (tile) {
+                    groupArea.addTile(tile);
+                }
+            }
+
+            this.groups.set(groupData.id, groupArea);
+            this.canvas.appendChild(groupArea.element);
         }
     }
 
-setupKeyboardEvents() {
-    document.addEventListener('keydown', (e) => {
-        if (e.key === 'Delete' && this.selectedTile) {
-            this.deleteTile(this.selectedTile);
+    clearAll() {
+        // 全タイル削除
+        for (const tile of this.tiles.values()) {
+            if (tile.element && tile.element.parentNode) {
+                tile.element.parentNode.removeChild(tile.element);
+            }
         }
-    });
-}
-}
+        this.tiles.clear();
 
-// 初期化
-// document.addEventListener('DOMContentLoaded', () => {
-//     new LinkCanvas();
-// });
+        // 全グループ削除
+        for (const group of this.groups.values()) {
+            if (group.element && group.element.parentNode) {
+                group.element.parentNode.removeChild(group.element);
+            }
+        }
+        this.groups.clear();
+    }
+}
