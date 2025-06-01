@@ -8,7 +8,6 @@ class StorageManager {
         console.log('[INIT] StorageManager initialized');
     }
 
-    // saveDataメソッドを以下に置換：
     async saveData(tiles, groups, settings = {}) {
         try {
             const data = {
@@ -34,7 +33,6 @@ class StorageManager {
         }
     }
 
-    // loadDataメソッドを以下に置換：
     async loadData() {
         try {
             // chrome.storage.local から読み込み
@@ -67,20 +65,6 @@ class StorageManager {
             return null;
         }
     }
-
-    // clearAllDataメソッドも修正：
-    async clearAllData() {
-        try {
-            await chrome.storage.local.remove([this.storageKey]);
-            await chrome.storage.sync.remove([this.storageKey]); // 念のため
-            console.log('[INFO] All data cleared from both storages');
-            return true;
-        } catch (error) {
-            console.log('[ERROR] Failed to clear data:', error);
-            return false;
-        }
-    }
-
 
     serializeTiles(tilesMap) {
         const tiles = [];
@@ -115,13 +99,38 @@ class StorageManager {
 
     async clearAllData() {
         try {
-            await chrome.storage.sync.remove([this.storageKey]);
-            console.log('[INFO] All data cleared');
+            await chrome.storage.local.remove([this.storageKey]);
+            await chrome.storage.sync.remove([this.storageKey]); // 念のため
+            console.log('[INFO] All data cleared from both storages');
             return true;
         } catch (error) {
             console.log('[ERROR] Failed to clear data:', error);
             return false;
         }
     }
-}
 
+    // 容量監視機能（構文エラー修正版）
+    async getStorageUsage() {
+        try {
+            const usage = await chrome.storage.local.getBytesInUse();
+            const data = await chrome.storage.local.get([this.storageKey]);
+            const dataSize = data[this.storageKey] ? JSON.stringify(data[this.storageKey]).length : 0;
+
+            console.log('[INFO] Storage usage:', {
+                totalBytes: usage,
+                dataBytes: dataSize,
+                percentage: ((dataSize / (5 * 1024 * 1024)) * 100).toFixed(2) + '%'
+            });
+
+            return {
+                totalBytes: usage,
+                dataBytes: dataSize,
+                maxBytes: 5 * 1024 * 1024, // 5MB
+                percentage: (dataSize / (5 * 1024 * 1024)) * 100
+            };
+        } catch (error) {
+            console.log('[ERROR] Failed to get storage usage:', error);
+            return null;
+        }
+    }
+}

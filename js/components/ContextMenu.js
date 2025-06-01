@@ -197,14 +197,14 @@ class ContextMenu {
     }
 
     handleDeleteAll() {
-        const confirmMessage = this.currentTargetType === 'group'
-            ? `グループ「${this.currentTarget.name}」をすべて削除しますか？`
-            : `タイル「${this.currentTarget.title}」を削除しますか？`;
-
-        if (confirm(confirmMessage)) {
-            if (this.currentTargetType === 'tile') {
-                this.deleteTile(this.currentTarget);
-            } else if (this.currentTargetType === 'group') {
+        if (this.currentTargetType === 'tile') {
+            // タイル削除：確認ダイアログなしで即座削除
+            this.deleteTile(this.currentTarget);
+            console.log('[INFO] Tile deleted instantly:', this.currentTarget.id);
+        } else if (this.currentTargetType === 'group') {
+            // グループ削除：確認ダイアログあり
+            const confirmMessage = `グループ「${this.currentTarget.name}」をすべて削除しますか？`;
+            if (confirm(confirmMessage)) {
                 this.deleteGroup(this.currentTarget);
             }
         }

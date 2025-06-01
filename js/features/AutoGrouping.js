@@ -1,7 +1,7 @@
 class AutoGrouping {
     constructor(linkCanvas) {
         this.canvas = linkCanvas;
-        this.HOVER_DELAY = 120;
+        this.HOVER_DELAY = 250;
         this.hoverTimer = null;
         this.hoverIndicator = null;
         this.currentHoverPair = null; // 追加：現在のホバー対象を記録
