@@ -141,44 +141,191 @@ function handleWindowResize() {
 }
 
 // ブックマークインポート
+// js/main.js の handleBookmarkImport を置換
 async function handleBookmarkImport() {
     try {
         const bookmarks = await chrome.bookmarks.getTree();
-        // 簡単な実装 - 最初の10個のブックマークをインポート
-        const flatBookmarksWithURLs = [];
-
-        function extractBookmarks(nodes) {
-            for (const node of nodes) {
-                if (node.url) {
-                    flatBookmarksWithURLs.push(node);
-                    if (flatBookmarksWithURLs.length >= 10) break;
-                }
-                if (node.children) {
-                    extractBookmarks(node.children);
-                }
-            }
-        }
-
-        extractBookmarks(bookmarks);
-
-        // グリッド配置でタイル作成
-        let x = 50, y = 50;
-        for (const bookmark of flatBookmarksWithURLs) {
-            linkCanvas.createLinkTile(bookmark.url, bookmark.title, { x, y });
-            x += 60;
-            if (x > window.innerWidth - 100) {
-                x = 50;
-                y += 60;
-            }
-        }
-
-        showSuccessMessage(`${flatBookmarksWithURLs.length}個のブックマークをインポートしました`);
+        const importDialog = createBookmarkImportDialog(bookmarks);
+        document.body.appendChild(importDialog);
 
     } catch (error) {
         console.log('[ERROR] Failed to import bookmarks:', error);
         showErrorMessage('ブックマークの読み込みに失敗しました');
     }
 }
+
+function createBookmarkImportDialog(bookmarks) {
+    const dialog = document.createElement('div');
+    dialog.className = 'import-dialog';
+    dialog.innerHTML = `
+        <div class="dialog-overlay">
+            <div class="dialog-content">
+                <h3>ブックマークをインポート</h3>
+                <div class="bookmark-tree" id="bookmark-tree"></div>
+                <div class="dialog-buttons">
+                    <button id="import-selected">選択項目をインポート</button>
+                    <button id="cancel-import">キャンセル</button>
+                </div>
+            </div>
+        </div>
+    `;
+
+    // スタイル設定
+    const style = document.createElement('style');
+    style.textContent = `
+        .import-dialog {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 10000;
+            background: rgba(0,0,0,0.5);
+        }
+        .dialog-overlay {
+            width: 100%;
+            height: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .dialog-content {
+            background: white;
+            border-radius: 8px;
+            padding: 20px;
+            max-width: 500px;
+            max-height: 600px;
+            display: flex;
+            flex-direction: column;
+        }
+        .bookmark-tree {
+            flex: 1;
+            overflow-y: auto;
+            border: 1px solid #ddd;
+            padding: 10px;
+            margin: 10px 0;
+        }
+        .bookmark-item {
+            padding: 4px 0;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+        }
+        .bookmark-item:hover {
+            background: #f0f0f0;
+        }
+        .bookmark-item input[type="checkbox"] {
+            margin-right: 8px;
+        }
+        .dialog-buttons {
+            display: flex;
+            gap: 10px;
+            justify-content: flex-end;
+        }
+        .dialog-buttons button {
+            padding: 8px 16px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+    `;
+    document.head.appendChild(style);
+
+    // ブックマークツリー生成
+    const tree = dialog.querySelector('#bookmark-tree');
+    const selectedBookmarks = new Set();
+
+    function renderBookmarkNode(node, level = 0) {
+        const div = document.createElement('div');
+        div.style.marginLeft = (level * 20) + 'px';
+
+        if (node.url) {
+            // リーフ（URLあり）
+            div.className = 'bookmark-item';
+            div.innerHTML = `
+                <input type="checkbox" data-url="${node.url}" data-title="${node.title}">
+                <img src="https://www.google.com/s2/favicons?domain=${new URL(node.url).hostname}" width="16" height="16" style="margin-right: 8px;">
+                ${node.title || node.url}
+            `;
+
+            const checkbox = div.querySelector('input[type="checkbox"]');
+            checkbox.addEventListener('change', (e) => {
+                if (e.target.checked) {
+                    selectedBookmarks.add({
+                        url: node.url,
+                        title: node.title || new URL(node.url).hostname
+                    });
+                } else {
+                    // Set から削除（参照比較のため別方法）
+                    for (const bookmark of selectedBookmarks) {
+                        if (bookmark.url === node.url) {
+                            selectedBookmarks.delete(bookmark);
+                            break;
+                        }
+                    }
+                }
+            });
+        } else {
+            // フォルダ
+            div.innerHTML = `<strong>📁 ${node.title}</strong>`;
+        }
+
+        tree.appendChild(div);
+
+        // 子ノード再帰処理
+        if (node.children) {
+            node.children.forEach(child => {
+                renderBookmarkNode(child, level + 1);
+            });
+        }
+    }
+
+    // ブックマークツリー構築
+    if (bookmarks[0] && bookmarks[0].children) {
+        bookmarks[0].children.forEach(node => {
+            renderBookmarkNode(node);
+        });
+    }
+
+    // イベントリスナー
+    dialog.querySelector('#import-selected').addEventListener('click', () => {
+        importSelectedBookmarks([...selectedBookmarks]);
+        document.body.removeChild(dialog);
+    });
+
+    dialog.querySelector('#cancel-import').addEventListener('click', () => {
+        document.body.removeChild(dialog);
+    });
+
+    dialog.addEventListener('click', (e) => {
+        if (e.target.className === 'dialog-overlay') {
+            document.body.removeChild(dialog);
+        }
+    });
+
+    return dialog;
+}
+
+function importSelectedBookmarks(bookmarks) {
+    let x = 50, y = 50;
+    const gridSize = 60;
+    const maxPerRow = Math.floor((window.innerWidth - 100) / gridSize);
+
+    bookmarks.forEach((bookmark, index) => {
+        const row = Math.floor(index / maxPerRow);
+        const col = index % maxPerRow;
+
+        const position = {
+            x: 50 + col * gridSize,
+            y: 50 + row * gridSize
+        };
+
+        linkCanvas.createLinkTile(bookmark.url, bookmark.title, position);
+    });
+
+    showSuccessMessage(`${bookmarks.length}個のブックマークをインポートしました`);
+}
+
 
 // 全データクリア
 async function handleClearAllData() {

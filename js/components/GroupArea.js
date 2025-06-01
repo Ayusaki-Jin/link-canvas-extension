@@ -1,8 +1,22 @@
 class GroupArea {
+    // js/components/GroupArea.js のコンストラクタ部分を修正
     constructor(id, color, name, position, size) {
         this.id = id;
-        this.color = color.hex || color;
-        this.colorName = color.name || 'blue';
+
+        // カラー処理を安全に
+        if (typeof color === 'object' && color.hex) {
+            this.color = color.hex;
+            this.colorName = color.name;
+        } else if (typeof color === 'string') {
+            this.color = color;
+            this.colorName = this.getColorNameFromHex(color);
+        } else {
+            this.color = '#007acc';
+            this.colorName = 'blue';
+        }
+
+        console.log('[DEBUG] GroupArea created with color:', this.color, 'name:', this.colorName);
+
         this.name = name;
         this.position = position || { x: 0, y: 0 };
         this.size = size || { width: 120, height: 100 };
@@ -14,6 +28,23 @@ class GroupArea {
         this.header = this.createHeader();
         this.setupEventListeners();
     }
+
+    // 新しいメソッドを追加
+    getColorNameFromHex(hex) {
+        const colorMap = {
+            '#007acc': 'blue',
+            '#28a745': 'green',
+            '#dc3545': 'red',
+            '#fd7e14': 'orange',
+            '#6f42c1': 'purple',
+            '#20c997': 'teal',
+            '#e83e8c': 'pink',
+            '#ffc107': 'yellow',
+            '#6c757d': 'gray'
+        };
+        return colorMap[hex] || 'blue';
+    }
+
 
     createElement() {
         const element = document.createElement('div');
