@@ -270,6 +270,30 @@ function createBookmarkImportDialog(bookmarks) {
                     checkbox.dispatchEvent(new Event('change'));
                 }
             });
+            // 【ここに追加】checkbox changeイベントリスナー
+            const checkbox = div.querySelector('input[type="checkbox"]');
+            checkbox.addEventListener('change', (e) => {
+                const bookmarkData = {
+                    url: node.url,
+                    title: node.title || new URL(node.url).hostname
+                };
+
+                if (e.target.checked) {
+                    selectedBookmarks.add(bookmarkData);
+                    console.log('[DEBUG] Bookmark added:', bookmarkData.title);
+                } else {
+                    // Setから削除（参照比較のため特別な処理）
+                    for (const existing of selectedBookmarks) {
+                        if (existing.url === bookmarkData.url) {
+                            selectedBookmarks.delete(existing);
+                            console.log('[DEBUG] Bookmark removed:', existing.title);
+                            break;
+                        }
+                    }
+                }
+
+                console.log('[DEBUG] Selected count:', selectedBookmarks.size);
+            });
 
         } else {
             // フォルダ
@@ -312,25 +336,42 @@ function createBookmarkImportDialog(bookmarks) {
     return dialog;
 }
 
+// 既存のimportSelectedBookmarks関数を置換：
+
 function importSelectedBookmarks(bookmarks) {
+    console.log('[DEBUG] Importing bookmarks:', bookmarks.length, bookmarks);
+
+    if (!bookmarks || bookmarks.length === 0) {
+        showErrorMessage('選択されたブックマークがありません');
+        return;
+    }
+
     let x = 50, y = 50;
     const gridSize = 60;
     const maxPerRow = Math.floor((window.innerWidth - 100) / gridSize);
 
+    let importedCount = 0;
+
     bookmarks.forEach((bookmark, index) => {
-        const row = Math.floor(index / maxPerRow);
-        const col = index % maxPerRow;
+        if (bookmark.url && bookmark.url.startsWith('http')) {
+            const row = Math.floor(index / maxPerRow);
+            const col = index % maxPerRow;
 
-        const position = {
-            x: 50 + col * gridSize,
-            y: 50 + row * gridSize
-        };
+            const position = {
+                x: 50 + col * gridSize,
+                y: 50 + row * gridSize
+            };
 
-        linkCanvas.createLinkTile(bookmark.url, bookmark.title, position);
+            console.log('[DEBUG] Creating tile for:', bookmark.title, 'at:', position);
+            linkCanvas.createLinkTile(bookmark.url, bookmark.title, position);
+            importedCount++;
+        }
     });
 
-    showSuccessMessage(`${bookmarks.length}個のブックマークをインポートしました`);
+    console.log('[DEBUG] Import completed:', importedCount, 'tiles created');
+    showSuccessMessage(`${importedCount}個のブックマークをインポートしました`);
 }
+
 
 
 // 全データクリア
