@@ -270,7 +270,7 @@ function createBookmarkImportDialog(bookmarks) {
                     checkbox.dispatchEvent(new Event('change'));
                 }
             });
-            // 【ここに追加】checkbox changeイベントリスナー
+            // checkbox changeイベントリスナー
             const checkbox = div.querySelector('input[type="checkbox"]');
             checkbox.addEventListener('change', (e) => {
                 const bookmarkData = {
