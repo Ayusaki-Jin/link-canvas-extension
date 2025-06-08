@@ -341,7 +341,13 @@ class LinkCanvas {
         // クリックでページ開く
         element.addEventListener('click', (e) => {
             if (!this.dragState.isDragging) {
-                window.open(tile.url, '_blank');
+                if (e.ctrlKey || e.metaKey) {
+                    // Ctrl+クリック：新規タブ
+                    window.open(tile.url, '_blank');
+                } else {
+                    // 通常クリック：同一タブ
+                    window.location.href = tile.url;
+                }
             }
         });
 

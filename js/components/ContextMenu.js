@@ -68,13 +68,14 @@ class ContextMenu {
                 case 'ungroup':
                     item.style.display = 'none';
                     break;
-                case 'open-all':
-                    item.style.display = 'none';
-                    break;
                 case 'delete-all':
                     item.textContent = 'タイル削除';
                     item.style.display = 'block';
                     break;
+                case 'open-all':
+                    item.textContent = '新規タブで開く';
+                    item.style.display = 'block';
+                            break;
             }
         });
     }

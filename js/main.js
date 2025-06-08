@@ -105,11 +105,26 @@ function initializeUI() {
         clearButton.addEventListener('click', handleClearAllData);
     }
 
+    // 手動タイル作成ボタン
+    const manualTileButton = document.getElementById('manual-tile-button');
+    if (manualTileButton) {
+        manualTileButton.addEventListener('click', showManualTileDialog);
+    }
+
+    // 現在タブインポートボタン
+    const importTabsButton = document.getElementById('import-current-tabs');
+    if (importTabsButton) {
+        importTabsButton.addEventListener('click', handleCurrentTabsImport);
+     }
+
+
     console.log('[INFO] UI initialized');
 }
 
 // データ変更時にundo履歴を記録
 // Undo状態保存（Chrome Sync対応）
+// saveUndoState関数を以下に置換：
+
 async function saveUndoState() {
     if (!linkCanvas) return;
 
@@ -126,30 +141,56 @@ async function saveUndoState() {
         undoStack.shift();
     }
 
-    // Chrome Syncにも保存（最新のものだけ）
+    // 【修正】Chrome Syncには軽量版のみ保存
     try {
-        const syncStates = undoStack.slice(-MAX_UNDO_SYNC);
+        const lightweightStates = undoStack.slice(-MAX_UNDO_SYNC).map(state => ({
+            timestamp: state.timestamp,
+            tileCount: state.tiles.length,
+            groupCount: state.groups.length,
+            id: state.id
+        }));
+
         await chrome.storage.sync.set({
-            'linkCanvas_undo': syncStates
+            'linkCanvas_undo_light': lightweightStates
         });
-        console.log('[DEBUG] Undo state saved to sync, total:', undoStack.length);
+
+        // 完全なデータはローカルのみに保存
+        await chrome.storage.local.set({
+            'linkCanvas_undo_full': undoStack.slice(-MAX_UNDO_SYNC)
+        });
+
+        console.log('[DEBUG] Undo state saved (light + full), total:', undoStack.length);
     } catch (error) {
         console.log('[WARNING] Failed to save undo to sync:', error);
+        // Syncに失敗してもローカルには保存継続
     }
 }
 
+
 // Undo履歴読み込み
+// loadUndoHistory関数を以下に置換：
+
 async function loadUndoHistory() {
     try {
-        const result = await chrome.storage.sync.get(['linkCanvas_undo']);
-        if (result.linkCanvas_undo && Array.isArray(result.linkCanvas_undo)) {
-            undoStack = result.linkCanvas_undo;
-            console.log('[INFO] Undo history loaded:', undoStack.length, 'states');
+        // まずローカルから完全なデータを読み込み
+        const localResult = await chrome.storage.local.get(['linkCanvas_undo_full']);
+        if (localResult.linkCanvas_undo_full && Array.isArray(localResult.linkCanvas_undo_full)) {
+            undoStack = localResult.linkCanvas_undo_full;
+            console.log('[INFO] Undo history loaded from local:', undoStack.length, 'states');
+            return;
+        }
+
+        // ローカルにない場合はSyncから軽量版を確認
+        const syncResult = await chrome.storage.sync.get(['linkCanvas_undo']);
+        if (syncResult.linkCanvas_undo && Array.isArray(syncResult.linkCanvas_undo)) {
+            undoStack = syncResult.linkCanvas_undo;
+            console.log('[INFO] Undo history loaded from sync:', undoStack.length, 'states');
         }
     } catch (error) {
         console.log('[WARNING] Failed to load undo history:', error);
     }
 }
+
 
 // 強化版Undo機能
 function handleUndo() {
@@ -300,6 +341,8 @@ function handleUndo() {
 }
 
 // キーボードショートカット
+// handleKeyboardShortcuts関数を以下に置換：
+
 function handleKeyboardShortcuts(e) {
     const modifier = e.ctrlKey || e.metaKey;
 
@@ -320,6 +363,13 @@ function handleKeyboardShortcuts(e) {
             }
             break;
 
+        case 'v':
+            if (modifier) {
+                e.preventDefault();
+                handleClipboardPaste();
+            }
+            break;
+
         case 'Escape':
             if (contextMenu) {
                 contextMenu.hide();
@@ -327,6 +377,68 @@ function handleKeyboardShortcuts(e) {
             break;
     }
 }
+
+// 新しい関数：クリップボード監視
+async function handleClipboardPaste() {
+    try {
+        // クリップボード内容を取得
+        const clipboardText = await navigator.clipboard.readText();
+
+        if (!clipboardText || clipboardText.trim().length === 0) {
+            console.log('[DEBUG] Clipboard is empty');
+            return;
+        }
+
+        const text = clipboardText.trim();
+        console.log('[DEBUG] Clipboard content:', text.substring(0, 100) + (text.length > 100 ? '...' : ''));
+
+        // URL判定（厳密な正規表現）
+        const urlPattern = /^https?:\/\/[^\s/$.?#].[^\s]*$/i;
+
+        if (!urlPattern.test(text)) {
+            console.log('[DEBUG] Clipboard content is not a valid URL');
+            return;
+        }
+
+        // URLが有効な場合、自動でタイル作成
+        console.log('[INFO] Valid URL detected in clipboard, creating tile');
+
+        // Undo状態保存
+        if (window.saveUndoState) {
+            window.saveUndoState();
+        }
+
+        // 空いている位置を探す
+        const position = window.gridManager.findNearestFreePosition(100, 100);
+
+        // 自動タイトル生成
+        let title;
+        try {
+            const domain = new URL(text).hostname;
+            title = linkCanvas.generateSmartTitle(text, domain);
+        } catch (error) {
+            title = 'Clipboard Link';
+        }
+
+        // タイル作成
+        const tile = linkCanvas.createLinkTile(text, title, position);
+
+        // 成功フィードバック（控えめ）
+        showSuccessMessage(`タイル「${title}」を作成しました`);
+
+        console.log('[INFO] Tile created from clipboard successfully:', tile.id);
+
+    } catch (error) {
+        // エラーは静かに処理（ユーザーには表示しない）
+        console.log('[DEBUG] Clipboard access failed or content invalid:', error.message);
+
+        // クリップボードアクセス権限がない場合の代替処理
+        if (error.name === 'NotAllowedError') {
+            console.log('[DEBUG] Clipboard access not allowed in this context');
+        }
+    }
+}
+
 
 // ウィンドウリサイズ処理
 function handleWindowResize() {
@@ -999,14 +1111,25 @@ function createBookmarkSidePanel(bookmarks) {
 }
 
 // パネル移動機能
+// makePanelDraggable関数を以下に置換：
+
 function makePanelDraggable(panel) {
-    const header = panel.querySelector('#side-panel-header');
+    // ヘッダーを動的に検索（複数のIDパターンに対応）
+    const header = panel.querySelector('.side-panel-header') ||
+        panel.querySelector('.tabs-panel-header') ||
+        panel.querySelector('[id$="-header"]');
+
+    if (!header) {
+        console.log('[WARNING] Draggable header not found in panel');
+        return;
+    }
+
     let isDragging = false;
     let startX, startY, startLeft, startTop;
 
     header.addEventListener('mousedown', (e) => {
         // 閉じるボタンクリック時は移動しない
-        if (e.target.id === 'close-side-panel') return;
+        if (e.target.id.includes('close-')) return;
 
         isDragging = true;
         startX = e.clientX;
@@ -1044,6 +1167,7 @@ function makePanelDraggable(panel) {
         }
     });
 }
+
 
 
 
@@ -1784,5 +1908,418 @@ function createEraserMode() {
     showSuccessMessage('左クリック+ドラッグでタイルを削除');
 }
 
+// 新しい関数：手動タイル作成ダイアログ
+function showManualTileDialog() {
+    const dialog = document.createElement('div');
+    dialog.className = 'manual-tile-dialog';
+    dialog.innerHTML = `
+        <div class="dialog-overlay">
+            <div class="dialog-content">
+                <h3>➕ 手動でタイル作成</h3>
+                <div class="input-group">
+                    <label for="tile-url">URL:</label>
+                    <input type="url" id="tile-url" placeholder="https://example.com" required>
+                </div>
+                <div class="input-group">
+                    <label for="tile-title">タイトル:</label>
+                    <input type="text" id="tile-title" placeholder="サイト名" required>
+                </div>
+                <div class="dialog-buttons">
+                    <button id="create-tile-btn" class="primary-btn">作成</button>
+                    <button id="cancel-tile-btn" class="secondary-btn">キャンセル</button>
+                </div>
+            </div>
+        </div>
+    `;
+
+    // スタイル設定
+    const style = document.createElement('style');
+    style.textContent = `
+        .manual-tile-dialog {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 10000;
+            background: rgba(0,0,0,0.5);
+        }
+        
+        .manual-tile-dialog .dialog-overlay {
+            width: 100%;
+            height: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .manual-tile-dialog .dialog-content {
+            background: white;
+            border-radius: 12px;
+            padding: 24px;
+            min-width: 400px;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.3);
+        }
+        
+        .manual-tile-dialog h3 {
+            margin: 0 0 20px 0;
+            color: #333;
+            text-align: center;
+        }
+        
+        .input-group {
+            margin-bottom: 16px;
+        }
+        
+        .input-group label {
+            display: block;
+            margin-bottom: 6px;
+            font-weight: bold;
+            color: #555;
+        }
+        
+        .input-group input {
+            width: 100%;
+            padding: 8px 12px;
+            border: 2px solid #e9ecef;
+            border-radius: 6px;
+            font-size: 14px;
+            transition: border-color 0.2s ease;
+        }
+        
+        .input-group input:focus {
+            outline: none;
+            border-color: #28a745;
+        }
+        
+        .dialog-buttons {
+            display: flex;
+            gap: 12px;
+            justify-content: flex-end;
+            margin-top: 20px;
+        }
+        
+        .primary-btn {
+            padding: 10px 20px;
+            background: #28a745;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: bold;
+        }
+        
+        .primary-btn:hover {
+            background: #218838;
+        }
+        
+        .secondary-btn {
+            padding: 10px 20px;
+            background: #6c757d;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+        }
+        
+        .secondary-btn:hover {
+            background: #5a6268;
+        }
+    `;
+    document.head.appendChild(style);
+
+    // イベントリスナー
+    dialog.querySelector('#create-tile-btn').addEventListener('click', () => {
+        const url = dialog.querySelector('#tile-url').value.trim();
+        const title = dialog.querySelector('#tile-title').value.trim();
+
+        if (url && title) {
+            if (url.startsWith('http://') || url.startsWith('https://')) {
+                // 空いている位置を探す
+                const position = window.gridManager.findNearestFreePosition(100, 100);
+
+                // Undo状態保存
+                if (window.saveUndoState) {
+                    window.saveUndoState();
+                }
+
+                // タイル作成
+                linkCanvas.createLinkTile(url, title, position);
+                showSuccessMessage(`タイル「${title}」を作成しました`);
+                document.body.removeChild(dialog);
+            } else {
+                alert('正しいURL形式で入力してください（http:// または https:// で始まる）');
+            }
+        } else {
+            alert('URLとタイトルの両方を入力してください');
+        }
+    });
+
+    dialog.querySelector('#cancel-tile-btn').addEventListener('click', () => {
+        document.body.removeChild(dialog);
+    });
+
+    // 背景クリックで閉じる
+    dialog.addEventListener('click', (e) => {
+        if (e.target.className === 'dialog-overlay') {
+            document.body.removeChild(dialog);
+        }
+    });
+
+    // ESCキーで閉じる
+    const handleEscape = (e) => {
+        if (e.key === 'Escape') {
+            document.body.removeChild(dialog);
+            document.removeEventListener('keydown', handleEscape);
+        }
+    };
+    document.addEventListener('keydown', handleEscape);
+
+    document.body.appendChild(dialog);
+
+    // URLフィールドにフォーカス
+    setTimeout(() => {
+        dialog.querySelector('#tile-url').focus();
+    }, 100);
+}
 
 
+// 新しい関数：現在タブインポート
+async function handleCurrentTabsImport() {
+    try {
+        // 現在開いているタブ一覧を取得
+        const tabs = await chrome.tabs.query({});
+
+        if (tabs.length === 0) {
+            showErrorMessage('開いているタブがありません');
+            return;
+        }
+
+        // HTTP/HTTPSタブのみフィルタ
+        const validTabs = tabs.filter(tab =>
+            tab.url &&
+            (tab.url.startsWith('http://') || tab.url.startsWith('https://')) &&
+            !tab.url.startsWith('chrome://') &&
+            !tab.url.startsWith('chrome-extension://')
+        );
+
+        if (validTabs.length === 0) {
+            showErrorMessage('インポート可能なタブがありません');
+            return;
+        }
+
+        createCurrentTabsPanel(validTabs);
+
+    } catch (error) {
+        console.log('[ERROR] Failed to get current tabs:', error);
+        showErrorMessage('タブ情報の取得に失敗しました');
+    }
+}
+
+// 新しい関数：現在タブパネル作成
+function createCurrentTabsPanel(tabs) {
+    // 既存パネルがあれば削除
+    const existingPanel = document.getElementById('current-tabs-panel');
+    if (existingPanel) {
+        document.body.removeChild(existingPanel);
+    }
+
+    const panel = document.createElement('div');
+    panel.id = 'current-tabs-panel';
+    panel.innerHTML = `
+        <div class="tabs-panel-header" id="tabs-panel-header">
+            <div class="header-left">
+                <span class="drag-handle">⋮⋮</span>
+                <h3>📋 現在のタブ (${tabs.length})</h3>
+            </div>
+            <button id="close-tabs-panel">✕</button>
+        </div>
+        <div class="tabs-panel-content" id="tabs-panel-content"></div>
+    `;
+
+    // スタイル設定
+    const style = document.createElement('style');
+    style.textContent = `
+        #current-tabs-panel {
+            position: fixed;
+            top: 150px;
+            left: 20px;
+            width: 300px;
+            height: 400px;
+            background: rgba(255,255,255,0.98);
+            border: 2px solid #28a745;
+            border-radius: 12px;
+            z-index: 1000;
+            display: flex;
+            flex-direction: column;
+            box-shadow: 0 8px 24px rgba(40,167,69,0.3);
+            backdrop-filter: blur(10px);
+            resize: both;
+            overflow: hidden;
+            min-width: 250px;
+            min-height: 300px;
+        }
+        
+        .tabs-panel-header {
+            padding: 12px 16px;
+            background: linear-gradient(135deg, #28a745, #20c997);
+            color: white;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            cursor: move;
+            border-radius: 10px 10px 0 0;
+            user-select: none;
+        }
+        
+        .tabs-panel-header h3 {
+            margin: 0;
+            font-size: 14px;
+            font-weight: 600;
+        }
+        
+        #close-tabs-panel {
+            background: none;
+            border: none;
+            color: white;
+            font-size: 18px;
+            cursor: pointer;
+            width: 24px;
+            height: 24px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: background-color 0.2s ease;
+        }
+        
+        #close-tabs-panel:hover {
+            background: rgba(255,255,255,0.2);
+        }
+        
+        .tabs-panel-content {
+            flex: 1;
+            overflow-y: auto;
+            padding: 8px;
+        }
+        
+        .draggable-tab {
+            padding: 8px 12px;
+            margin: 2px 0;
+            background: #f8f9fa;
+            border: 1px solid #e9ecef;
+            border-radius: 6px;
+            cursor: grab;
+            display: flex;
+            align-items: center;
+            transition: all 0.2s ease;
+            position: relative;
+        }
+        
+        .draggable-tab:hover {
+            background: #e8f5e8;
+            transform: translateX(4px);
+            border-color: #28a745;
+            box-shadow: 0 2px 8px rgba(40,167,69,0.2);
+        }
+        
+        .draggable-tab:active {
+            cursor: grabbing;
+            transform: scale(0.98);
+        }
+        
+        .draggable-tab img {
+            margin-right: 8px;
+            flex-shrink: 0;
+        }
+        
+        .draggable-tab .tab-info {
+            flex: 1;
+            min-width: 0;
+        }
+        
+        .draggable-tab .tab-title {
+            font-size: 12px;
+            font-weight: 500;
+            color: #333;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            margin-bottom: 2px;
+        }
+        
+        .draggable-tab .tab-url {
+            font-size: 10px;
+            color: #666;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        
+        .tab-active {
+            border-color: #007acc;
+            background: #e3f2fd;
+        }
+        
+        .tab-active .tab-title {
+            color: #007acc;
+            font-weight: 600;
+        }
+    `;
+    document.head.appendChild(style);
+
+    // タブ要素作成
+    const content = panel.querySelector('#tabs-panel-content');
+
+    tabs.forEach(tab => {
+        const tabEl = document.createElement('div');
+        tabEl.className = 'draggable-tab';
+        tabEl.draggable = true;
+
+        // アクティブタブのマーク
+        if (tab.active) {
+            tabEl.classList.add('tab-active');
+        }
+
+        tabEl.innerHTML = `
+            <img src="${tab.favIconUrl || 'https://www.google.com/s2/favicons?domain=' + new URL(tab.url).hostname}" width="16" height="16">
+            <div class="tab-info">
+                <div class="tab-title" title="${tab.title || tab.url}">${tab.title || 'Untitled'}</div>
+                <div class="tab-url" title="${tab.url}">${tab.url}</div>
+            </div>
+        `;
+
+        // ドラッグイベント設定
+        tabEl.addEventListener('dragstart', (e) => {
+            e.dataTransfer.setData('text/uri-list', tab.url);
+            e.dataTransfer.setData('text/plain', tab.title || 'Current Tab');
+            e.dataTransfer.effectAllowed = 'copy';
+
+            // ドラッグ中の視覚フィードバック
+            tabEl.style.opacity = '0.5';
+            console.log('[DEBUG] Dragging tab:', tab.title);
+        });
+
+        tabEl.addEventListener('dragend', (e) => {
+            tabEl.style.opacity = '1';
+        });
+
+        content.appendChild(tabEl);
+    });
+
+    // パネル移動機能（既存のmakePanelDraggableを使用）
+    makePanelDraggable(panel);
+
+    // 閉じるボタン
+    panel.querySelector('#close-tabs-panel').addEventListener('click', () => {
+        document.body.removeChild(panel);
+    });
+
+    document.body.appendChild(panel);
+
+    // 設定パネルを閉じる
+    document.querySelector('#settings-panel').classList.add('hidden');
+
+    // 成功メッセージ
+    showSuccessMessage(`${tabs.length}個のタブを表示しました！ドラッグしてタイルを作成`);
+}

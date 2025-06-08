@@ -56,6 +56,7 @@ class GroupArea {
         element.style.width = this.size.width + 'px';
         element.style.height = this.size.height + 'px';
         element.style.borderColor = this.color;
+        element.style.zIndex = '100'; // 【追加】初期z-index設定
 
         return element;
     }
@@ -241,6 +242,8 @@ class GroupArea {
         const startLeft = this.position.x;
         const startTop = this.position.y;
 
+        this.bringToFront();
+
         const handleMouseMove = (e) => {
             const deltaX = e.clientX - startX;
             const deltaY = e.clientY - startY;
@@ -274,6 +277,36 @@ class GroupArea {
         document.addEventListener('mousemove', handleMouseMove);
         document.addEventListener('mouseup', handleMouseUp);
     }
+
+    // 【新規メソッド】最前面移動
+    bringToFront() {
+        // 現在の最大z-indexを取得
+        let maxZIndex = 100; // 基本z-index
+
+        if (window.linkCanvas && window.linkCanvas.groups) {
+            for (const group of window.linkCanvas.groups.values()) {
+                if (group !== this && group.element) {
+                    const currentZ = parseInt(group.element.style.zIndex) || 100;
+                    maxZIndex = Math.max(maxZIndex, currentZ);
+                }
+            }
+        }
+
+        // このグループを最前面に設定
+        const newZIndex = maxZIndex + 1;
+        this.element.style.zIndex = newZIndex;
+
+        console.log('[INFO] Group brought to front:', this.id, 'z-index:', newZIndex);
+
+        // 視覚的フィードバック（オプション）
+        this.element.style.boxShadow = '0 8px 24px rgba(0,0,0,0.3)';
+
+        // 少し後に通常のシャドウに戻す
+        setTimeout(() => {
+            this.element.style.boxShadow = '0 4px 12px rgba(0,0,0,0.1)';
+        }, 300);
+    }
+
 
     handleTileDrop(dropEvent) {
         if (!window.linkCanvas || !window.linkCanvas.dragState.draggedTile) return;
