@@ -10,7 +10,7 @@ let nameGenerator = null;
 // Undo機能のグローバル変数
 let undoStack = [];
 const MAX_UNDO_LOCAL = 10;
-const MAX_UNDO_SYNC = 3; // Syncには最新3つのみ
+const MAX_UNDO_SYNC = 3; 
 // アプリケーション初期化
 document.addEventListener('DOMContentLoaded', async () => {
     console.log('[INIT] Link Canvas application starting');
@@ -67,7 +67,7 @@ function initializeUI() {
     const trashButton = document.getElementById('show-trash-area');
     const exportButton = document.getElementById('export-bookmarks');
 
-    // 【修正】設定パネル開閉
+    // 設定パネル開閉
     if (settingsToggle) {
         settingsToggle.addEventListener('click', () => {
             settingsPanel.classList.toggle('hidden');
@@ -86,9 +86,9 @@ function initializeUI() {
         importButton.addEventListener('click', handleBookmarkImport);
     }
 
-    // 【修正】消しゴムモード（直接起動）
+    // 消しゴムモード
     if (trashButton) {
-        trashButton.textContent = '🧽 消しゴムモード';
+        trashButton.textContent = '消しゴムモード';
         trashButton.addEventListener('click', () => {
             document.querySelector('#settings-panel').classList.add('hidden');
             createEraserMode();
@@ -649,7 +649,7 @@ function createEraserMode() {
 
     const exitButton = document.createElement('button');
     exitButton.id = 'exit-eraser';
-    exitButton.innerHTML = '🧽 消しゴムモード終了';
+    exitButton.innerHTML = '消しゴムモード終了';
     exitButton.style.cssText = `
         position: fixed;
         top: 20px;

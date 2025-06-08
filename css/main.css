@@ -86,7 +86,7 @@ body {
     height: 50px;
 }
 
-/* 設定ボタン（ホバーアニメーション追加） */
+/* 設定ボタン */
 .settings-button {
     position: fixed;
     top: 20px;
@@ -103,13 +103,11 @@ body {
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
     z-index: 1001;
     transition: all 0.3s ease;
-    /* アニメーション追加 */
 }
 
 .settings-button:hover {
     background: rgba(255, 255, 255, 1);
     transform: scale(1.1) rotate(90deg);
-    /* 拡大 + 回転 */
     box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
 }
 
@@ -182,7 +180,6 @@ body {
     width: 40px;
     height: 40px;
     background: rgba(255, 255, 255, 0.9);
-    /* 設定ボタンと同じ白色 */
     border-radius: 50%;
     display: flex;
     align-items: center;
@@ -190,9 +187,7 @@ body {
     cursor: pointer;
     font-size: 18px;
     color: #28a745;
-    /* アイコンを緑色に */
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
-    /* 設定ボタンと同じシャドウ */
     z-index: 1001;
     transition: all 0.3s ease;
 }
@@ -200,13 +195,11 @@ body {
 .manual-tile-button:hover {
     background: rgba(255, 255, 255, 1);
     transform: scale(1.1) rotate(90deg);
-    /* 設定ボタンと同じアニメーション */
     box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
     color: #218838;
-    /* ホバー時は濃い緑 */
 }
 
-/* 設定パネル（ボタンホバー効果強化） */
+/* 設定パネル */
 .settings-panel {
     position: fixed;
     top: 70px;
@@ -230,25 +223,19 @@ body {
 .setting-item button {
     width: 100%;
     padding: 10px 8px;
-    /* パディング増加 */
     border: 1px solid #dee2e6;
     border-radius: 6px;
-    /* 角丸増加 */
     background: #f8f9fa;
     cursor: pointer;
     font-size: 12px;
     font-weight: 500;
-    /* フォント太め */
     transition: all 0.2s ease;
-    /* アニメーション追加 */
 }
 
 .setting-item button:hover {
     background: #e3f2fd;
-    /* 青系ホバー */
     border-color: #007acc;
     transform: translateY(-1px);
-    /* わずかに浮上 */
     box-shadow: 0 2px 8px rgba(0, 122, 204, 0.2);
 }
 

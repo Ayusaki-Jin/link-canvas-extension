@@ -80,7 +80,7 @@ class ContextMenu {
         });
     }
 
-    // updateMenuForGroupメソッドを以下に置換：
+    // updateMenuForGroupメソッド
 
     updateMenuForGroup() {
         const items = this.menu.querySelectorAll('.context-item');
@@ -294,10 +294,6 @@ class ContextMenu {
     }
 
     // グループ色変更実行
-    // changeGroupColorメソッドを以下に置換：
-
-    // changeGroupColorメソッドを以下に置換：
-
     changeGroupColor(groupArea, colorData) {
         try {
             // Undo状態保存
@@ -407,7 +403,7 @@ class ContextMenu {
         }
     }
 
-    // hideメソッドを以下に置換：
+    // hideメソッド
 
     hide() {
         // 動的に追加された色変更メニューをクリーンアップ

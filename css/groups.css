@@ -33,7 +33,7 @@
     justify-content: center;
 }
 
-/* 既存の.group-area.collapsed を以下に置換： */
+/* group-area.collapsed  */
 
 .group-area.collapsed {
     height: 50px !important;
