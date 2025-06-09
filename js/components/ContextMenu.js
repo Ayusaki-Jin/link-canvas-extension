@@ -296,10 +296,7 @@ class ContextMenu {
     // グループ色変更実行
     changeGroupColor(groupArea, colorData) {
         try {
-            // Undo状態保存
-            if (window.saveUndoState) {
-                window.saveUndoState();
-            }
+        
 
             console.log('[DEBUG] Changing group color from', groupArea.color, 'to', colorData.hex);
 
@@ -482,10 +479,7 @@ class ContextMenu {
     // deleteTileメソッドを修正：
 
     deleteTile(tile) {
-        // 削除前の状態を保存
-        if (window.saveUndoState) {
-            window.saveUndoState();
-        }
+  
 
         if (tile.groupId) {
             const groupArea = this.canvas.groups.get(tile.groupId);

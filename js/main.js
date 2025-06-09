@@ -7,10 +7,7 @@ let autoGrouping = null;
 let colorManager = null;
 let nameGenerator = null;
 
-// Undo機能のグローバル変数
-let undoStack = [];
-const MAX_UNDO_LOCAL = 10;
-const MAX_UNDO_SYNC = 3; 
+
 // アプリケーション初期化
 document.addEventListener('DOMContentLoaded', async () => {
     console.log('[INIT] Link Canvas application starting');
@@ -121,124 +118,18 @@ function initializeUI() {
     console.log('[INFO] UI initialized');
 }
 
-// データ変更時にundo履歴を記録
-// Undo状態保存（Chrome Sync対応）
-// saveUndoState関数を以下に置換：
-
-async function saveUndoState() {
-    if (!linkCanvas) return;
-
-    const state = {
-        tiles: linkCanvas.storageManager.serializeTiles(linkCanvas.tiles),
-        groups: linkCanvas.storageManager.serializeGroups(linkCanvas.groups),
-        timestamp: Date.now(),
-        id: 'undo_' + Date.now()
-    };
-
-    // ローカルスタックに追加
-    undoStack.push(state);
-    if (undoStack.length > MAX_UNDO_LOCAL) {
-        undoStack.shift();
-    }
-
-    // 【修正】Chrome Syncには軽量版のみ保存
-    try {
-        const lightweightStates = undoStack.slice(-MAX_UNDO_SYNC).map(state => ({
-            timestamp: state.timestamp,
-            tileCount: state.tiles.length,
-            groupCount: state.groups.length,
-            id: state.id
-        }));
-
-        await chrome.storage.sync.set({
-            'linkCanvas_undo_light': lightweightStates
-        });
-
-        // 完全なデータはローカルのみに保存
-        await chrome.storage.local.set({
-            'linkCanvas_undo_full': undoStack.slice(-MAX_UNDO_SYNC)
-        });
-
-        console.log('[DEBUG] Undo state saved (light + full), total:', undoStack.length);
-    } catch (error) {
-        console.log('[WARNING] Failed to save undo to sync:', error);
-        // Syncに失敗してもローカルには保存継続
-    }
-}
-
-
-// Undo履歴読み込み
-// loadUndoHistory関数を以下に置換：
-
-async function loadUndoHistory() {
-    try {
-        // まずローカルから完全なデータを読み込み
-        const localResult = await chrome.storage.local.get(['linkCanvas_undo_full']);
-        if (localResult.linkCanvas_undo_full && Array.isArray(localResult.linkCanvas_undo_full)) {
-            undoStack = localResult.linkCanvas_undo_full;
-            console.log('[INFO] Undo history loaded from local:', undoStack.length, 'states');
-            return;
-        }
-
-        // ローカルにない場合はSyncから軽量版を確認
-        const syncResult = await chrome.storage.sync.get(['linkCanvas_undo']);
-        if (syncResult.linkCanvas_undo && Array.isArray(syncResult.linkCanvas_undo)) {
-            undoStack = syncResult.linkCanvas_undo;
-            console.log('[INFO] Undo history loaded from sync:', undoStack.length, 'states');
-        }
-    } catch (error) {
-        console.log('[WARNING] Failed to load undo history:', error);
-    }
-}
-
-
-// 強化版Undo機能
-function handleUndo() {
-    if (undoStack.length === 0) {
-        showErrorMessage('元に戻す操作がありません');
-        return;
-    }
-
-    const lastState = undoStack.pop();
-
-    try {
-        // 現在の状態をクリア
-        linkCanvas.clearAll();
-
-        // 前の状態を復元
-        linkCanvas.loadFromData({
-            tiles: lastState.tiles,
-            groups: lastState.groups
-        });
-
-        // Chrome Syncも更新
-        chrome.storage.sync.set({
-            'linkCanvas_undo': undoStack.slice(-MAX_UNDO_SYNC)
-        }).catch(err => console.log('[WARNING] Sync update failed:', err));
-
-        showSuccessMessage(`操作を元に戻しました（残り${undoStack.length}回）`);
-        console.log('[INFO] Undo executed, remaining:', undoStack.length);
-
-    } catch (error) {
-        console.log('[ERROR] Undo failed:', error);
-        showErrorMessage('元に戻す操作に失敗しました');
-    }
-}
-
 // データ読み込み
 // loadSavedData関数を修正：
 
 async function loadSavedData() {
-    // Undo履歴を先に読み込み
-    await loadUndoHistory();
+
 
     const data = await storageManager.loadData();
 
     if (data) {
         await linkCanvas.loadFromData(data);
 
-        // 初回データ読み込み後にundo履歴を保存
-        saveUndoState();
+
 
         console.log('[INFO] Saved data loaded successfully');
     }
@@ -264,12 +155,12 @@ function setupEventListeners() {
     console.log('[INFO] Event listeners set up');
 }
 
-// キャンバス右クリックメニュー
+// showCanvasContextMenu関数：
+
 function showCanvasContextMenu(e) {
     const menu = document.createElement('div');
     menu.className = 'canvas-context-menu';
     menu.innerHTML = `
-        <div class="context-item" id="undo-action">↶ 元に戻す (${undoStack.length})</div>
         <div class="context-item" id="clear-canvas">🗑️ 全削除</div>
     `;
 
@@ -285,15 +176,9 @@ function showCanvasContextMenu(e) {
         min-width: 120px;
     `;
 
-    // イベント
-    menu.querySelector('#undo-action').addEventListener('click', () => {
-        handleUndo();
-        document.body.removeChild(menu);
-    });
-
+    // 全削除のみ（Undo削除のため）
     menu.querySelector('#clear-canvas').addEventListener('click', () => {
         if (confirm('すべてのタイルとグループを削除しますか？')) {
-            saveUndoState(); // 削除前の状態を保存
             linkCanvas.clearAll();
             linkCanvas.saveData();
             showSuccessMessage('すべて削除しました');
@@ -315,30 +200,8 @@ function showCanvasContextMenu(e) {
     document.body.appendChild(menu);
 }
 
-// Undo機能
-function handleUndo() {
-    if (undoStack.length === 0) {
-        showErrorMessage('元に戻す操作がありません');
-        return;
-    }
 
-    const lastState = undoStack.pop();
 
-    try {
-        linkCanvas.clearAll();
-        linkCanvas.loadFromData({
-            tiles: lastState.tiles,
-            groups: lastState.groups
-        });
-
-        showSuccessMessage('操作を元に戻しました');
-        console.log('[INFO] Undo executed, remaining stack:', undoStack.length);
-
-    } catch (error) {
-        console.log('[ERROR] Undo failed:', error);
-        showErrorMessage('元に戻す操作に失敗しました');
-    }
-}
 
 // キーボードショートカット
 // handleKeyboardShortcuts関数を以下に置換：
@@ -350,18 +213,11 @@ function handleKeyboardShortcuts(e) {
         case 's':
             if (modifier) {
                 e.preventDefault();
-                saveUndoState();
                 linkCanvas.saveData();
                 showSuccessMessage('データを保存しました');
             }
             break;
 
-        case 'z':
-            if (modifier) {
-                e.preventDefault();
-                handleUndo();
-            }
-            break;
 
         case 'v':
             if (modifier) {
@@ -403,10 +259,6 @@ async function handleClipboardPaste() {
         // URLが有効な場合、自動でタイル作成
         console.log('[INFO] Valid URL detected in clipboard, creating tile');
 
-        // Undo状態保存
-        if (window.saveUndoState) {
-            window.saveUndoState();
-        }
 
         // 空いている位置を探す
         const position = window.gridManager.findNearestFreePosition(100, 100);
@@ -531,7 +383,7 @@ function createEraserMode() {
     let eraserElement = null;
     let deletedTiles = [];
 
-    saveUndoState(); // 消しゴム開始前の状態を保存
+
 
     function createEraser(x, y) {
         eraserElement = document.createElement('div');
@@ -674,8 +526,6 @@ function createEraserMode() {
 
 // 以下、既存の関数群（省略部分は元のまま）
 async function handleBookmarkImport() {
-    saveUndoState(); // インポート前の状態を保存
-
     try {
         const bookmarks = await chrome.bookmarks.getTree();
         showImportMethodDialog(bookmarks);
@@ -687,7 +537,6 @@ async function handleBookmarkImport() {
 
 // 残りの関数は元のコードと同じですが、重要な修正点：
 // 1. サイドパネルのdragendイベントに安全チェック追加
-// 2. データ変更後にsaveUndoState()を呼び出す
 
 // 残りの関数群...（元のコードをそのまま使用、但しdragendに安全チェック追加）
 
@@ -1823,10 +1672,8 @@ function createEraserMode() {
                     .find(([id, tile]) => tile.element === element)?.[0];
 
                 if (tileId && !deletedTiles.includes(tileId)) {
-                    // 【重要】最初のタイル削除前にUndo状態保存
-                    if (deletedTiles.length === 0) {
-                        saveUndoState();
-                    }
+                  
+                  
 
                     const tile = window.linkCanvas.tiles.get(tileId);
 
@@ -2038,10 +1885,6 @@ function showManualTileDialog() {
                 // 空いている位置を探す
                 const position = window.gridManager.findNearestFreePosition(100, 100);
 
-                // Undo状態保存
-                if (window.saveUndoState) {
-                    window.saveUndoState();
-                }
 
                 // タイル作成
                 linkCanvas.createLinkTile(url, title, position);

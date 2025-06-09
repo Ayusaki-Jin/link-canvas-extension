@@ -33,7 +33,6 @@
 ![Context Menu](./screenshots/context-menu.png)
 - **Right-click menus**: Rename, delete, and perform batch operations  
 - **Eraser mode**: Drag-select multiple items for quick cleanup  
-- **Undo system**: 10-step history with Chrome Sync support  
 
 ![Eraser Mode](./screenshots/eraser-mode.png)
 

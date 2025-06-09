@@ -33,7 +33,7 @@
 ![コンテキストメニュー](./screenshots/context-menu.png)
 - **右クリックメニュー**: 名前変更、削除、一括操作  
 - **消しゴムモード**: 複数アイテムを選択して一括削除  
-- **アンドゥ機能**: 10ステップ履歴、Chrome Sync対応  
+
 
 ![消しゴムモード](./screenshots/eraser-mode.png)
 
